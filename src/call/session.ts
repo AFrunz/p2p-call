@@ -557,14 +557,17 @@ export class CallSession {
     // Кандидаты обязаны уехать вместе с кодом: обмен одноразовый, добавить их
     // потом некуда. Если браузер не положил их в localDescription — дописываем.
     const sdp = insertCandidates(description.sdp, this.gathered)
-    console.debug('[p2p] кандидатов в коде:', countCandidates(sdp))
-
-    return encodeEnvelope({
+    const code = await encodeEnvelope({
       version: 1,
       role,
       publicKey: await exportPublicKey(this.keyPair.publicKey),
       sdp,
     })
+
+    console.debug(
+      `[p2p] код готов: кандидатов ${countCandidates(sdp)}, символов ${code.length}`,
+    )
+    return code
   }
 
   /**

@@ -415,7 +415,10 @@ function render(view: SessionView): void {
   el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode ?? ''
   show('outgoing-block', view.outgoingCode !== null)
   if (view.outgoingCode !== null) {
-    setText('outgoing-label', t(view.role === 'responder' ? 'exchange.answerCode' : 'exchange.yourCode'))
+    // Длина рядом с кодом — чтобы обе стороны могли сверить её глазами:
+    // выделение мышью в прокрученном поле теряет хвост незаметно.
+    const label = t(view.role === 'responder' ? 'exchange.answerCode' : 'exchange.yourCode')
+    setText('outgoing-label', `${label} · ${t('exchange.chars', { count: view.outgoingCode.length })}`)
   }
   if (view.inviteLink !== null && view.inviteLink !== inviteLink) {
     inviteLink = view.inviteLink
@@ -792,6 +795,24 @@ function wire(): void {
         setDisabled('action-accept', true, '')
       }
     })
+  })
+
+  // Клик по полю выделяет код целиком: иначе в прокрученном поле легко
+  // захватить только видимую часть и не заметить этого.
+  for (const event of ['focus', 'click'] as const) {
+    on('outgoing-code', event, () => el<HTMLTextAreaElement>('outgoing-code').select())
+  }
+
+  // Поле приёма тоже выделяется целиком: иначе вставка дописывается к
+  // остаткам прошлой попытки, и код склеивается из двух разных.
+  on('incoming-code', 'focus', () => el<HTMLTextAreaElement>('incoming-code').select())
+
+  on('incoming-code', 'input', () => {
+    const length = el<HTMLTextAreaElement>('incoming-code').value.trim().length
+    setText(
+      'incoming-label',
+      length === 0 ? t('exchange.peerCode') : `${t('exchange.peerCode')} · ${t('exchange.chars', { count: length })}`,
+    )
   })
 
   on('action-copy-code', 'click', () => {

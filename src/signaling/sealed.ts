@@ -14,11 +14,8 @@ export class SealError extends Error {
 }
 
 /**
- * Ключ, которым шифруется весь обмен через сигнальный сервер.
- *
- * Выводится из секрета комнаты, а тот живёт только во фрагменте ссылки. Поэтому
- * сервер видит лишь непрозрачные блобы: подменить SDP или DTLS-fingerprint,
- * чтобы влезть в середину, он не может.
+ * Ключ обмена через сигнальный сервер. Выводится из секрета комнаты, который
+ * живёт только во фрагменте ссылки, — поэтому сервер видит лишь блобы.
  */
 export async function deriveSignalingKey(roomSecret: Bytes): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey('raw', roomSecret, 'HKDF', false, ['deriveBits'])

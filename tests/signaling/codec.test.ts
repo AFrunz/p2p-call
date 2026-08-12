@@ -131,6 +131,22 @@ describe('encodeEnvelope / decodeEnvelope', () => {
     expect(decoded.sdp).toBe(big)
   })
 
+  it('переживает SDP в десятки килобайт', async () => {
+    // Firefox с полным набором кодеков и расширений выдаёт SDP на несколько
+    // килобайт; кодирование не должно спотыкаться о размер.
+    const bulky = Array.from(
+      { length: 400 },
+      (_, index) => `a=candidate:${index} 1 UDP ${2122252543 - index} 2a02:6bf:8007:201:a934:7647:172d:${index} ${40000 + index} typ host`,
+    ).join('\r\n')
+    const sdp = `${OFFER_SDP}${bulky}\r\n`
+
+    const code = await encodeEnvelope(envelope({ sdp }))
+    const decoded = await decodeEnvelope(code)
+
+    expect(sdp.length).toBeGreaterThan(30_000)
+    expect(decoded.sdp).toBe(sdp)
+  })
+
   it('терпит код, испачканный пробелами при пересылке', async () => {
     const code = await encodeEnvelope(envelope())
     const dirty = `  ${code.slice(0, 20)}\n${code.slice(20)}  `

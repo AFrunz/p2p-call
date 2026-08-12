@@ -211,9 +211,9 @@
 
       <div class="card" id="outgoing-block">
         <span class="label" id="outgoing-label" data-i18n="exchange.yourCode">Ваш код</span>
-        <textarea id="outgoing-code" class="code" readonly rows="4"></textarea>
+        <textarea id="outgoing-code" class="code" readonly rows="6"></textarea>
         <div class="actions">
-          <button class="button" id="action-copy-code">
+          <button class="button button--primary" id="action-copy-code">
             <i data-lucide="copy"></i><span data-i18n="link.copy">Скопировать</span>
           </button>
           <button class="icon-button" id="action-qr-code"><i data-lucide="qr-code"></i></button>
@@ -222,11 +222,11 @@
       </div>
 
       <div class="card">
-        <span class="label" data-i18n="exchange.peerCode">Код собеседника</span>
+        <span class="label" id="incoming-label" data-i18n="exchange.peerCode">Код собеседника</span>
         <textarea
           id="incoming-code"
           class="code"
-          rows="4"
+          rows="6"
           autocomplete="off"
           spellcheck="false"
           data-i18n-placeholder="exchange.placeholder"

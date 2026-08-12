@@ -2,11 +2,8 @@ import { isQualityPreset } from '../media/quality.js'
 import type { QualityPreset } from '../media/quality.js'
 
 /**
- * Служебные сообщения поверх DataChannel.
- *
- * Всё это приходит от собеседника, то есть является недоверенным вводом:
- * decodeMessage обязан возвращать null на любом отклонении от схемы, а не
- * приводить типы «как получится».
+ * Служебные сообщения поверх DataChannel. Приходят от собеседника, поэтому
+ * decodeMessage возвращает null на любом отклонении от схемы.
  */
 export type ControlMessage =
   | { t: 'mute'; kind: 'audio' | 'video'; muted: boolean }

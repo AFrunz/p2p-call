@@ -255,4 +255,5 @@ export const en: Record<string, string> = {
   'session.codeTruncated': 'The code was copied incompletely — the end is missing. Select all of it, or use the copy button.',
   'session.codeVersion': 'The code was made by a different version of the app. Reload both tabs and exchange codes again.',
   'session.answerWithoutOffer': 'This is a reply code, but your call is already closed — it probably timed out. Start a new call and exchange codes again.',
+  'exchange.chars': '{count} characters',
 }

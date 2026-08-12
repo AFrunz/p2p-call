@@ -29,11 +29,8 @@ export const DEFAULT_SETTINGS: Settings = {
 export type ServerCheck = { ok: true } | { ok: false; error: Message }
 
 /**
- * Проверяет адрес сигналинга.
- *
- * Страница отдаётся по HTTPS, поэтому `ws://` браузер заблокирует как mixed
- * content — сказать об этом надо в форме, а не оставить пользователя гадать,
- * почему соединение молча не открывается.
+ * Проверяет адрес сигналинга. `ws://` браузер заблокирует как mixed content —
+ * об этом надо сказать в форме, а не оставить пользователя гадать.
  */
 export function validateServerUrl(raw: string): ServerCheck {
   const url = raw.trim()

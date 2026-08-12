@@ -125,12 +125,8 @@ async function decrypt(frame: EncodedFrame, options: TransformOptions): Promise<
 }
 
 /**
- * Догоняет ротацию отправителя.
- *
- * Отправитель крутит ratchet по таймеру, приёмник узнаёт об этом только по
- * новому keyId в кадре и доводит свою цепочку до нужного поколения. Шагов
- * вперёд ограниченное число: иначе подделанный keyId заставит крутить ratchet
- * вечно.
+ * Догоняет ротацию отправителя по keyId из кадра. Шагов вперёд ограниченное
+ * число: иначе подделанный keyId заставит крутить ratchet вечно.
  */
 async function keyForGeneration(state: ReceiverState, keyId: number): Promise<CryptoKey> {
   const known = state.generations.get(keyId)
