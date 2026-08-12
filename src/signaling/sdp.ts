@@ -138,9 +138,12 @@ export function insertCandidates(sdp: string, candidates: readonly string[]): st
   if (at < 0) at = media
   at += 1
 
-  const normalized = candidates.map((line) =>
-    line.startsWith('a=') ? line : `a=${line}`,
-  )
+  // События приходят по одному на каждую m-строку, поэтому один и тот же
+  // кандидат встречается несколько раз. При bundle всё идёт одним транспортом
+  // и повторы бессмысленны — они лишь раздувают код и множат пары.
+  const normalized = [
+    ...new Set(candidates.map((line) => (line.startsWith('a=') ? line : `a=${line}`))),
+  ]
   lines.splice(at, 0, ...normalized)
   return lines.join(eol)
 }

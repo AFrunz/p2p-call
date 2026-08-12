@@ -57,6 +57,18 @@ describe('insertCandidates', () => {
     expect(insertCandidates(OFFER_SDP, LINES)).toBe(OFFER_SDP)
   })
 
+  it('не дублирует кандидатов: события приходят на каждую m-строку', () => {
+    // При bundle всё идёт одним транспортом, а повторы раздувают код и
+    // множат бессмысленные пары.
+    const result = insertCandidates(BARE, [...LINES, ...LINES, LINES[0]!])
+    expect(countCandidates(result)).toBe(2)
+  })
+
+  it('считает одинаковыми строки с префиксом a= и без него', () => {
+    const result = insertCandidates(BARE, [LINES[0]!, `a=${LINES[0]!}`])
+    expect(countCandidates(result)).toBe(1)
+  })
+
   it('не трогает SDP, когда дописывать нечего', () => {
     expect(insertCandidates(BARE, [])).toBe(BARE)
   })

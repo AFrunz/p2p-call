@@ -424,6 +424,7 @@ export class CallSession {
         // Раньше он стартовал сразу после генерации ответного кода — и тикал,
         // пока человек переносил этот код в другую вкладку.
         if (connection.iceConnectionState === 'checking') this.startWatchdog()
+        if (connection.iceConnectionState === 'failed') void this.dumpCandidates()
         if (connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') {
           this.stopWatchdog()
         }
@@ -574,22 +575,47 @@ export class CallSession {
     }, CONNECT_TIMEOUT_MS)
   }
 
-  /** Выкладывает в консоль, какие пары кандидатов вообще пробовались. */
+  /**
+   * Сводка по кандидатам и парам одной строкой.
+   *
+   * Ключевой вопрос при провале — дошли ли до нас кандидаты собеседника вообще.
+   * Ноль удалённых означает, что код разобрался, но ICE их не принял: проблема
+   * в SDP. Пары в состоянии failed при ненулевых обеих сторонах означают
+   * обратное — до сети дошло, а она не пустила.
+   */
   private async dumpCandidates(): Promise<void> {
     const connection = this.connection
     if (connection === null) return
 
     try {
       const report = await connection.getStats()
+      const local = new Map<string, string>()
+      const remote = new Map<string, string>()
+      const pairs: string[] = []
+
       report.forEach((entry) => {
         const stat = entry as Record<string, unknown>
+        const describeCandidate = () =>
+          `${String(stat['candidateType'])}/${String(stat['protocol'])} ${String(stat['address'])}:${String(stat['port'])}`
+
+        if (stat['type'] === 'local-candidate') local.set(String(stat['id']), describeCandidate())
+        if (stat['type'] === 'remote-candidate') remote.set(String(stat['id']), describeCandidate())
         if (stat['type'] === 'candidate-pair') {
-          console.debug('[p2p] пара', stat['state'], stat['localCandidateId'], stat['remoteCandidateId'])
-        }
-        if (stat['type'] === 'local-candidate' || stat['type'] === 'remote-candidate') {
-          console.debug('[p2p]', stat['type'], stat['candidateType'], stat['address'], stat['port'])
+          pairs.push(
+            `${String(stat['state'])} ${String(stat['localCandidateId'])}->${String(stat['remoteCandidateId'])}`,
+          )
         }
       })
+
+      console.debug(
+        `[p2p] ИТОГ: своих кандидатов ${local.size}, чужих ${remote.size}, пар ${pairs.length}`,
+      )
+      for (const [id, text] of remote) console.debug('[p2p] чужой', id, text)
+      for (const pair of pairs.slice(0, 12)) {
+        const [state, ids] = pair.split(' ')
+        const [from, to] = (ids ?? '').split('->')
+        console.debug('[p2p] пара', state, local.get(from ?? '') ?? from, '->', remote.get(to ?? '') ?? to)
+      }
     } catch {
       // Статистика недоступна — не повод падать поверх уже случившегося провала.
     }
