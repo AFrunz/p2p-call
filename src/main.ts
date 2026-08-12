@@ -364,6 +364,7 @@ function hostOf(url: string): string {
 function newSession(): CallSession {
   session?.hangUp()
   hideFailures()
+  setDisabled('action-accept', false, '')
 
   const created = new CallSession({
     quality: settings.quality,
@@ -690,6 +691,7 @@ function wire(): void {
     lastPhase = null
 
     hideFailures()
+    setDisabled('action-accept', false, '')
     el<HTMLTextAreaElement>('outgoing-code').value = ''
     el<HTMLTextAreaElement>('incoming-code').value = ''
     show('outgoing-block', false)
@@ -717,6 +719,13 @@ function wire(): void {
       // Ссылка и код различаются структурно — спрашивать пользователя незачем.
       if (parseInviteLink(input) !== null) await created.joinLink(input)
       else await created.acceptCode(input)
+    }).then(() => {
+      // Код применён — принимать его повторно нечего. Второй вызов
+      // setRemoteDescription в стабильном состоянии просто падает, а кнопка
+      // после снятия занятости выглядит готовой к нажатию.
+      if (session?.phase === 'connecting' || session?.phase === 'connected') {
+        setDisabled('action-accept', true, '')
+      }
     })
   })
 

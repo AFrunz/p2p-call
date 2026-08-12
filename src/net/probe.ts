@@ -46,9 +46,11 @@ export async function probeNetwork(
       const timer = setTimeout(done, timeoutMs)
 
       connection.addEventListener('icecandidate', (event) => {
-        if (event.candidate === null) return void done()
+        // Конец сбора приходит либо null, либо кандидатом с пустой строкой.
+        const line = event.candidate?.candidate ?? ''
+        if (line.length === 0) return void done()
 
-        const parsed = parseCandidateLine(event.candidate.candidate)
+        const parsed = parseCandidateLine(line)
         if (parsed !== null) candidates.push(parsed)
       })
     })

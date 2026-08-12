@@ -106,3 +106,41 @@ function parsePort(value: string): number | null {
   // Порт 9 (discard) законно встречается в m-строках, поэтому нижняя граница 0.
   return parsed <= 65535 ? parsed : null
 }
+
+/** Сколько строк `a=candidate:` уже лежит в SDP. */
+export function countCandidates(sdp: string): number {
+  return sdp.split(/\r?\n/).filter((line) => line.trim().startsWith('a=candidate:')).length
+}
+
+/**
+ * Дописывает собранные кандидаты в SDP, если их там нет.
+ *
+ * Код подключения передаётся один раз и целиком, поэтому кандидаты обязаны быть
+ * внутри SDP. Полагаться на то, что браузер сам их туда положит, нельзя: это
+ * поведение у разных движков различается, а пустой от кандидатов код выглядит
+ * рабочим и молча приводит к провалу ICE через секунду после обмена.
+ *
+ * При bundle все дорожки идут одним транспортом, поэтому достаточно первой
+ * медиасекции.
+ */
+export function insertCandidates(sdp: string, candidates: readonly string[]): string {
+  if (candidates.length === 0 || countCandidates(sdp) > 0) return sdp
+
+  const eol = sdp.includes('\r\n') ? '\r\n' : '\n'
+  const lines = sdp.split(/\r?\n/)
+
+  const media = lines.findIndex((line) => line.startsWith('m='))
+  if (media < 0) return sdp
+
+  // После ice-pwd — самое безопасное место: строка точно относится к этой
+  // секции и идёт до атрибутов кодеков.
+  let at = lines.findIndex((line, index) => index > media && line.startsWith('a=ice-pwd:'))
+  if (at < 0) at = media
+  at += 1
+
+  const normalized = candidates.map((line) =>
+    line.startsWith('a=') ? line : `a=${line}`,
+  )
+  lines.splice(at, 0, ...normalized)
+  return lines.join(eol)
+}

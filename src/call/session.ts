@@ -22,7 +22,12 @@ import { CodeFormatError } from '../signaling/codec.js'
 import { SignalingClient } from '../signaling/client.js'
 import { buildInviteLink, generateInvite, parseInviteLink } from '../signaling/link.js'
 import type { Invite } from '../signaling/link.js'
-import { extractFingerprint, parseCandidateLine } from '../signaling/sdp.js'
+import {
+  countCandidates,
+  extractFingerprint,
+  insertCandidates,
+  parseCandidateLine,
+} from '../signaling/sdp.js'
 import type { Role } from '../signaling/types.js'
 import type { QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
@@ -151,6 +156,8 @@ export class CallSession {
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private ratchetTimer: ReturnType<typeof setInterval> | null = null
   private watchdog: ReturnType<typeof setTimeout> | null = null
+  /** Кандидаты, собранные событиями: страховка на случай пустого SDP. */
+  private gathered: string[] = []
   private restarted = false
 
   constructor(private options: SessionOptions) {}
@@ -159,6 +166,10 @@ export class CallSession {
     this.listeners.add(listener)
     listener(this.view)
     return () => this.listeners.delete(listener)
+  }
+
+  get phase(): Phase {
+    return this.view.phase
   }
 
   get media(): { local: MediaStream | null; remote: MediaStream } {
@@ -420,8 +431,13 @@ export class CallSession {
     }
 
     connection.addEventListener('icecandidate', (event) => {
-      if (event.candidate === null) return
-      const parsed = parseCandidateLine(event.candidate.candidate)
+      // Конец сбора приходит по-разному: null у одних движков, пустая строка у
+      // других. Обе формы — не кандидат.
+      const line = event.candidate?.candidate ?? ''
+      if (line.length === 0) return
+
+      this.gathered.push(line)
+      const parsed = parseCandidateLine(line)
       console.debug('[p2p] кандидат', parsed?.type, parsed?.protocol, parsed?.address)
     })
 
@@ -480,11 +496,16 @@ export class CallSession {
     const description = this.connection?.localDescription
     if (description == null || this.keyPair === null) throw new SessionError('session.notReady')
 
+    // Кандидаты обязаны уехать вместе с кодом: обмен одноразовый, добавить их
+    // потом некуда. Если браузер не положил их в localDescription — дописываем.
+    const sdp = insertCandidates(description.sdp, this.gathered)
+    console.debug('[p2p] кандидатов в коде:', countCandidates(sdp))
+
     return encodeEnvelope({
       version: 1,
       role,
       publicKey: await exportPublicKey(this.keyPair.publicKey),
-      sdp: description.sdp,
+      sdp,
     })
   }
 
