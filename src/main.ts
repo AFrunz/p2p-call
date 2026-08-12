@@ -45,6 +45,7 @@ let locale: Locale = settings.locale ?? detectLocale(navigator.languages)
 let t = createTranslator(locale)
 
 let session: CallSession | null = null
+let unsubscribe: (() => void) | null = null
 let previewStream: MediaStream | null = null
 let network: NetworkReport | null = null
 let passphrase: string | null = null
@@ -431,7 +432,10 @@ function newSession(): CallSession {
     stream: previewStream,
   })
 
-  created.subscribe(render)
+  // Прошлая сессия обязана замолчать: иначе её умирающее соединение
+  // продолжает докладывать в интерфейс поверх новой.
+  unsubscribe?.()
+  unsubscribe = created.subscribe(render)
   session = created
   return created
 }

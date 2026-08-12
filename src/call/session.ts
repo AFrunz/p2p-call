@@ -527,7 +527,7 @@ export class CallSession {
 
     connection.addEventListener('connectionstatechange', () => {
       this.trace('connection')
-      void this.onConnectionState(connection.connectionState)
+      void this.onConnectionState(connection.connectionState, connection)
     })
 
     // Журнал состояний в консоли: вслепую отличить «не собрались кандидаты» от
@@ -574,7 +574,14 @@ export class CallSession {
     )
   }
 
-  private async onConnectionState(state: RTCPeerConnectionState): Promise<void> {
+  private async onConnectionState(
+    state: RTCPeerConnectionState,
+    connection: RTCPeerConnection,
+  ): Promise<void> {
+    // События приходят и от соединения, которое мы уже заменили при пересборке
+    // ответа. Его мнение о жизни нас больше не касается.
+    if (connection !== this.connection) return
+
     if (state === 'connected') {
       this.stopWatchdog()
       this.wasConnected = true
@@ -760,7 +767,15 @@ export class CallSession {
   /** Собирает конверт с нашим SDP и публичным ключом. */
   private async buildCode(role: Role): Promise<string> {
     const description = this.connection?.localDescription
-    if (description == null || this.keyPair === null) throw new SessionError('session.notReady')
+    if (description == null || this.keyPair === null) {
+      // Обычно это гонка: соединение снесли, пока мы ждали сбор кандидатов.
+      // Текст про «ещё не готово» тут вводит в заблуждение, поэтому пишем в
+      // журнал, что произошло на самом деле.
+      console.debug(
+        `[p2p] код не собрать: соединение ${this.connection === null ? 'снесено' : 'без описания'}`,
+      )
+      throw new SessionError('session.notReady')
+    }
 
     // Кандидаты обязаны уехать вместе с кодом: обмен одноразовый, добавить их
     // потом некуда. Если браузер не положил их в localDescription — дописываем.
