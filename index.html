@@ -32,7 +32,7 @@
           <video id="preview-video" autoplay playsinline muted></video>
           <div class="preview__off" id="preview-off">
             <i data-lucide="video-off"></i>
-            <p id="preview-hint" data-i18n="preview.off">Камера и микрофон выключены</p>
+            <p id="preview-hint" data-i18n="preview.requesting">Запрашиваем доступ к камере и микрофону…</p>
           </div>
           <div class="preview__toggles">
             <button class="toggle" id="toggle-mic" aria-pressed="false">
@@ -100,6 +100,11 @@
           <button class="button button--ghost" id="action-open-join" data-i18n="direct.join">
             У меня есть код
           </button>
+
+          <div class="row row--static row--busy" id="direct-status" hidden>
+            <i data-lucide="loader-circle"></i>
+            <span id="direct-status-text"></span>
+          </div>
         </section>
 
         <!-- ---------- Вкладка «Через сервер» ---------- -->
@@ -155,9 +160,9 @@
             <canvas id="qr-canvas" class="qr" hidden></canvas>
           </div>
 
-          <div class="row row--static" id="link-status" hidden>
+          <div class="row row--static row--busy" id="link-status" hidden>
             <i data-lucide="loader-circle"></i>
-            <span data-i18n="link.waiting">Собеседник ещё не подключился</span>
+            <span id="link-status-text"></span>
           </div>
 
           <div class="grow"></div>
@@ -212,6 +217,11 @@
         <button class="button button--primary" id="action-accept" data-i18n="exchange.connect">
           Подключиться
         </button>
+      </div>
+
+      <div class="row row--static row--busy" id="exchange-status" hidden>
+        <i data-lucide="loader-circle"></i>
+        <span id="exchange-status-text"></span>
       </div>
     </main>
 
@@ -301,6 +311,10 @@
           <button class="button button--outline" id="action-remove-server" data-i18n="settings.remove">
             Удалить
           </button>
+        </div>
+        <div class="row row--static row--busy" id="server-check-status" hidden>
+          <i data-lucide="loader-circle"></i>
+          <span id="server-check-text"></span>
         </div>
         <p class="hint" data-i18n="settings.serverHint">
           Сервер нужен, только если прямое соединение не проходит. Как развернуть — DEPLOY.md в

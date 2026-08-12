@@ -75,6 +75,14 @@ export interface SessionOptions {
   /** Базовый адрес страницы для сборки ссылки. */
   pageUrl: string
   /**
+   * Уже захваченный поток с главного экрана.
+   *
+   * Без него сессия просит камеру второй раз: пользователь ждёт лишние
+   * секунды, а первый поток продолжает держать устройство. Переданный поток
+   * сессия не останавливает — он принадлежит вызывающему коду.
+   */
+  stream?: MediaStream | null
+  /**
    * Готовый отчёт диагностики сети.
    *
    * Считается один раз на главном экране: поднимать ради него ещё пару
@@ -119,6 +127,8 @@ export class CallSession {
   private keys: MediaKeys | null = null
 
   private localStream: MediaStream | null = null
+  /** Свой ли поток: чужой гасить нельзя, его ещё показывают на главном экране. */
+  private ownsStream = false
   private readonly remoteStream = new MediaStream()
   private readonly stats = new StatsCollector()
   private statsTimer: ReturnType<typeof setInterval> | null = null
@@ -142,29 +152,45 @@ export class CallSession {
     this.patch({ phase: 'preparing', error: null })
 
     try {
-      const media = await requestMedia({
-        preset: this.options.quality,
-        cameraId: this.options.cameraId ?? null,
-        microphoneId: this.options.microphoneId ?? null,
-      })
-      this.localStream = media.stream
+      const existing = this.options.stream ?? null
+      let notice: Message | null = null
+
+      if (existing !== null) {
+        // Поток уже захвачен на главном экране вместе с выбранным состоянием
+        // микрофона и камеры — переспрашивать разрешение незачем.
+        this.localStream = existing
+        this.ownsStream = false
+      } else {
+        const media = await requestMedia({
+          preset: this.options.quality,
+          cameraId: this.options.cameraId ?? null,
+          microphoneId: this.options.microphoneId ?? null,
+        })
+        this.localStream = media.stream
+        this.ownsStream = true
+
+        // Входим в звонок молча и без картинки: включить себя — осознанное
+        // действие, а случайно оказаться в эфире быть не должно.
+        for (const track of media.stream.getTracks()) track.enabled = false
+        notice = media.problem?.text ?? describeMissing(media.missing)
+      }
+
       this.keyPair = await generateKeyPair()
 
-      // Входим в звонок молча и без картинки: включить себя — осознанное
-      // действие, а вот случайно оказаться в эфире не должно быть возможно.
-      for (const track of media.stream.getTracks()) track.enabled = false
+      const stream = this.localStream
+      const audio = stream.getAudioTracks()
+      const video = stream.getVideoTracks()
 
-      // Отсутствие устройств не мешает подключиться: без них человек будет
-      // смотреть и слушать. Но сказать об этом надо явно.
       this.patch({
-        canSend: {
-          audio: media.stream.getAudioTracks().length > 0,
-          video: media.stream.getVideoTracks().length > 0,
+        canSend: { audio: audio.length > 0, video: video.length > 0 },
+        muted: {
+          audio: !(audio[0]?.enabled ?? false),
+          video: !(video[0]?.enabled ?? false),
         },
-        notice: media.problem?.text ?? describeMissing(media.missing),
+        notice,
+        phase: 'idle',
+        network: this.options.network ?? null,
       })
-
-      this.patch({ phase: 'idle', network: this.options.network ?? null })
     } catch {
       this.fail(message('session.prepareFailed'))
     }
@@ -521,7 +547,7 @@ export class CallSession {
     this.channel?.close()
     this.connection?.close()
     this.worker?.terminate()
-    stopStream(this.localStream)
+    if (this.ownsStream) stopStream(this.localStream)
 
     this.signaling = null
     this.channel = null

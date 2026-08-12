@@ -94,7 +94,50 @@ svg {
   animation: spin 1.1s linear infinite;
 }
 
+/* --- состояние занятости --- */
+
+/*
+ * Долгие операции — захват камеры и сбор ICE-кандидатов — занимают секунды.
+ * Без крутилки кнопка выглядит просто не отзывающейся, и её жмут повторно.
+ */
+.button[data-busy] {
+  cursor: progress;
+  opacity: 1;
+}
+
+.button[data-busy]::before {
+  content: '';
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.button:disabled[data-busy] {
+  opacity: 0.85;
+}
+
+/* Строка состояния: та же крутилка, но рядом с объяснением, что происходит. */
+.row--busy svg {
+  animation: spin 1.1s linear infinite;
+  color: var(--muted);
+}
+
+.row--busy span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .button[data-busy]::before,
+  .row--busy svg {
+    animation: none;
+  }
+
   .lucide-loader-circle,
   [data-state='pending'] > svg:first-child {
     animation: none;

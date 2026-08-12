@@ -11,6 +11,7 @@ import { isQualityPreset } from './media/quality.js'
 import { buildChecks } from './net/checks.js'
 import type { NetworkCheck } from './net/checks.js'
 import { probeNetwork } from './net/probe.js'
+import { probeSignaling, reachabilityKey } from './net/reachability.js'
 import type { NetworkReport } from './net/probe.js'
 import { buildIceServers } from './net/turn.js'
 import { parseInviteLink } from './signaling/link.js'
@@ -135,6 +136,39 @@ function screen(name: (typeof SCREENS)[number]): void {
   showOnly([...SCREENS], name)
 }
 
+/**
+ * Помечает кнопку занятой на время долгой операции.
+ *
+ * Захват камеры и сбор ICE-кандидатов занимают секунды, и без этого кнопка
+ * просто не отзывается — пользователь жмёт её ещё раз и запускает вторую
+ * сессию. Повторный клик здесь же и отсекается.
+ */
+async function withBusy(id: string, busyKey: string, action: () => Promise<void>): Promise<void> {
+  const button = el<HTMLButtonElement>(id)
+  if (button.dataset['busy'] !== undefined) return
+
+  const restore = button.dataset['i18n']
+  const previous = button.textContent ?? ''
+
+  button.dataset['busy'] = ''
+  button.disabled = true
+  button.textContent = t(busyKey)
+
+  try {
+    await action()
+  } finally {
+    delete button.dataset['busy']
+    button.disabled = false
+    button.textContent = restore === undefined ? previous : t(restore)
+  }
+}
+
+/** Строка состояния под кнопками: что происходит прямо сейчас. */
+function status(rowId: string, textId: string, key: string | null): void {
+  show(rowId, key !== null)
+  if (key !== null) setText(textId, t(key))
+}
+
 // -------------------------------------------------------------------- превью
 
 async function startPreview(): Promise<void> {
@@ -152,6 +186,7 @@ async function startPreview(): Promise<void> {
 
   attachStream('preview-video', previewStream)
   renderPreviewState()
+  setText('preview-hint', t('preview.off'))
 
   if (media.ignoredSavedDevice) {
     settings = { ...settings, cameraId: null, microphoneId: null }
@@ -305,6 +340,7 @@ function renderServerPanel(): void {
   show('server-card', configured)
   show('link-card', configured && hasLink)
   show('link-status', configured && hasLink)
+  if (configured && hasLink) setText('link-status-text', t('link.waiting'))
 
   show('action-add-server', !configured)
   show('action-start-session', configured && !hasLink)
@@ -335,6 +371,9 @@ function newSession(): CallSession {
     signalingServer: settings.signalingServer,
     pageUrl: `${location.origin}${location.pathname}`,
     network,
+    // Камера уже захвачена на главном экране вместе с состоянием тумблеров —
+    // просить её второй раз значит заставить человека ждать на ровном месте.
+    stream: previewStream,
   })
 
   created.subscribe(render)
@@ -370,6 +409,16 @@ function render(view: SessionView): void {
 }
 
 function onPhase(view: SessionView): void {
+  status('direct-status', 'direct-status-text', view.phase === 'preparing' ? 'status.preparing' : null)
+  status(
+    'exchange-status',
+    'exchange-status-text',
+    view.phase === 'connecting' ? 'status.connecting' : view.phase === 'awaiting-exchange' ? 'status.waitingCode' : null,
+  )
+  if (view.phase === 'connecting' && inviteLink.length > 0) {
+    setText('link-status-text', t('link.peerJoined'))
+  }
+
   switch (view.phase) {
     case 'awaiting-exchange':
       setText('exchange-title', t('exchange.title'))
@@ -514,8 +563,15 @@ function wire(): void {
     toast(t('toast.settingsSaved'))
   })
   on('action-check-server', 'click', () => {
-    const check = validateServerUrl(el<HTMLInputElement>('setting-server').value)
-    toast(check.ok ? t('settings.checkOk') : tm(check.error))
+    const raw = el<HTMLInputElement>('setting-server').value
+    const check = validateServerUrl(raw)
+    if (!check.ok) return status('server-check-status', 'server-check-text', check.error.key)
+
+    void withBusy('action-check-server', 'settings.checking', async () => {
+      status('server-check-status', 'server-check-text', 'settings.checking')
+      const result = await probeSignaling(raw.trim())
+      status('server-check-status', 'server-check-text', reachabilityKey(result))
+    })
   })
   on('action-remove-server', 'click', () => {
     el<HTMLInputElement>('setting-server').value = ''
@@ -556,11 +612,13 @@ function wire(): void {
   })
 
   on('action-create-code', 'click', () => {
-    void (async () => {
+    void withBusy('action-create-code', 'direct.creating', async () => {
       const created = newSession()
       await created.prepare()
+      status('direct-status', 'direct-status-text', 'status.gathering')
       await created.createCode()
-    })()
+      status('direct-status', 'direct-status-text', null)
+    })
   })
 
   on('action-open-join', 'click', () => {
@@ -578,17 +636,18 @@ function wire(): void {
   })
 
   on('action-accept', 'click', () => {
-    void (async () => {
-      const input = el<HTMLTextAreaElement>('incoming-code').value.trim()
-      if (input.length === 0) return toast(t('toast.pasteCode'))
+    const input = el<HTMLTextAreaElement>('incoming-code').value.trim()
+    if (input.length === 0) return toast(t('toast.pasteCode'))
 
+    void withBusy('action-accept', 'exchange.connecting', async () => {
       const created = session ?? newSession()
       if (created.media.local === null) await created.prepare()
 
+      status('exchange-status', 'exchange-status-text', 'status.gathering')
       // Ссылка и код различаются структурно — спрашивать пользователя незачем.
       if (parseInviteLink(input) !== null) await created.joinLink(input)
       else await created.acceptCode(input)
-    })()
+    })
   })
 
   on('action-copy-code', 'click', () => {
@@ -601,18 +660,22 @@ function wire(): void {
   on('action-add-server', 'click', openSettings)
   on('action-edit-server', 'click', openSettings)
   on('action-start-session', 'click', () => {
-    void (async () => {
+    void withBusy('action-start-session', 'server.starting', async () => {
       const created = newSession()
       await created.prepare()
       await created.createLink()
-    })()
+    })
   })
 
   for (const id of ['action-copy-link', 'action-copy-link-2']) {
     on(id, 'click', () => void copy(inviteLink, 'toast.linkCopied'))
   }
   on('action-qr-link', 'click', () => void toggleQr('qr-canvas', inviteLink))
-  on('action-join-own-link', 'click', () => void session?.joinLink(inviteLink))
+  on('action-join-own-link', 'click', () => {
+    void withBusy('action-join-own-link', 'link.joining', async () => {
+      await session?.joinLink(inviteLink)
+    })
+  })
 
   on('action-sas-ok', 'click', () => show('sas-block', false))
   on('action-hangup', 'click', () => {
@@ -654,6 +717,7 @@ function start(): void {
   // Страница открыта по ссылке-приглашению — подключаемся, ничего не спрашивая.
   if (parseInviteLink(location.href) !== null) {
     void (async () => {
+      await startPreview()
       const created = newSession()
       await created.prepare()
       await created.joinLink(location.href)
