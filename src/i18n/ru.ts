@@ -248,4 +248,7 @@ export const ru: Record<string, string> = {
   'settings.checkReachable': 'Сервер отвечает.',
   'settings.checkUnreachable': 'Сервер не отвечает. Проверьте адрес и что он запущен.',
   'settings.checkTimeout': 'Сервер не ответил за отведённое время.',
+  'error.title': 'Не удалось подключиться',
+  'error.needServer': 'Без сервера-ретранслятора это соединение не установится. Достаточно, чтобы сервер был у одного из вас.',
+  'error.dismiss': 'Понятно',
 }

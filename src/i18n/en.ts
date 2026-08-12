@@ -238,4 +238,7 @@ export const en: Record<string, string> = {
   'settings.checkReachable': 'The server responds.',
   'settings.checkUnreachable': 'No response. Check the address and that the server is running.',
   'settings.checkTimeout': 'The server did not respond in time.',
+  'error.title': 'Could not connect',
+  'error.needServer': 'This connection will not go through without a relay server. It is enough for one of you to have one.',
+  'error.dismiss': 'Got it',
 }

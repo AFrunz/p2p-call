@@ -63,6 +63,11 @@ export interface SessionView {
   /** Предупреждение, не мешающее звонку, — в отличие от error. */
   notice: Message | null
   error: Message | null
+  /**
+   * Провал такого рода, что без сервера-ретранслятора его не обойти.
+   * Интерфейс по этому признаку показывает кнопку настройки сервера.
+   */
+  suggestServer: boolean
 }
 
 export interface SessionOptions {
@@ -114,6 +119,7 @@ export class CallSession {
     canSend: { audio: false, video: false },
     notice: null,
     error: null,
+    suggestServer: false,
   }
 
   private connection: RTCPeerConnection | null = null
@@ -149,7 +155,7 @@ export class CallSession {
 
   /** Захватывает камеру и параллельно проверяет сеть. */
   async prepare(): Promise<void> {
-    this.patch({ phase: 'preparing', error: null })
+    this.patch({ phase: 'preparing', error: null, suggestServer: false })
 
     try {
       const existing = this.options.stream ?? null
@@ -406,7 +412,9 @@ export class CallSession {
           // Не вышло — падаем в общий текст ниже.
         }
       }
-      this.fail(unreachableMessage(this.view.network))
+      // Соединение не поднялось после честной попытки и рестарта ICE — это
+      // ровно тот случай, когда помогает только ретранслятор.
+      this.fail(unreachableMessage(this.view.network), true)
     }
   }
 
@@ -556,9 +564,9 @@ export class CallSession {
     this.localStream = null
   }
 
-  private fail(reason: Message): void {
+  private fail(reason: Message, suggestServer = false): void {
     this.teardown()
-    this.patch({ phase: 'failed', error: reason })
+    this.patch({ phase: 'failed', error: reason, suggestServer })
   }
 
   private patch(changes: Partial<SessionView>): void {

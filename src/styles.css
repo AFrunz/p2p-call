@@ -164,6 +164,63 @@ svg {
   color: var(--danger);
 }
 
+/* --- блок провала --- */
+
+/*
+ * Провал заканчивает попытку, поэтому он не тост: остаётся на экране, пока
+ * его не закроют, и несёт кнопку следующего шага.
+ */
+.notice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.notice--error {
+  border-left-color: var(--danger);
+  background: #1B1418;
+}
+
+.notice--warn {
+  border-left-color: var(--warn);
+}
+
+.notice > svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  color: var(--danger);
+}
+
+.notice__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.notice__body strong {
+  font-size: 14px;
+}
+
+.notice__body p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.notice__body .actions {
+  margin-top: 2px;
+}
+
 .dot {
   width: 8px;
   height: 8px;

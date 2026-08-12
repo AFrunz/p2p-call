@@ -45,6 +45,7 @@ let inviteLink = ''
 
 let lastPhase: SessionView['phase'] | null = null
 let lastNotice: string | null = null
+let lastError: string | null = null
 let callStartedAt: number | null = null
 let timerHandle: ReturnType<typeof setInterval> | null = null
 let toastHandle: ReturnType<typeof setTimeout> | null = null
@@ -362,6 +363,7 @@ function hostOf(url: string): string {
 
 function newSession(): CallSession {
   session?.hangUp()
+  hideFailures()
 
   const created = new CallSession({
     quality: settings.quality,
@@ -388,7 +390,13 @@ function render(view: SessionView): void {
     lastNotice = view.notice.key
     toast(tm(view.notice))
   }
-  if (view.phase === 'failed' && view.error !== null) toast(tm(view.error))
+  if (view.error !== null && view.error.key !== lastError) {
+    lastError = view.error.key
+    // Провал заканчивает попытку — про такое нельзя сообщать тостом, который
+    // исчезнет через несколько секунд. Остальное (собеседник вышел) — тост.
+    if (view.phase === 'failed') showFailure(view)
+    else toast(tm(view.error))
+  }
 
   if (view.outgoingCode !== null) {
     el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode
@@ -406,6 +414,30 @@ function render(view: SessionView): void {
     lastPhase = view.phase
     onPhase(view)
   }
+}
+
+/**
+ * Показывает провал так, чтобы его успели прочитать.
+ *
+ * С экрана обмена кодами не уводим: там остались введённые данные и понятно,
+ * на каком шаге всё сломалось. Из звонка уводить приходится — звонка больше
+ * нет, — но ошибку переносим на главный экран, а не роняем молча.
+ */
+function showFailure(view: SessionView): void {
+  const onExchange = !el('screen-exchange').hidden
+  const prefix = onExchange ? 'exchange-error' : 'home-error'
+  if (!onExchange) screen('screen-home')
+
+  setText(`${prefix}-note`, view.error === null ? '' : tm(view.error))
+  show(`${prefix}-hint`, view.suggestServer)
+  show(`${prefix}-server`, view.suggestServer)
+  show(prefix, true)
+  renderIcons()
+}
+
+function hideFailures(): void {
+  for (const prefix of ['home-error', 'exchange-error']) show(prefix, false)
+  lastError = null
 }
 
 function onPhase(view: SessionView): void {
@@ -434,6 +466,10 @@ function onPhase(view: SessionView): void {
       break
 
     case 'failed':
+      // Экран выбирает showFailure: он знает, откуда пришёл провал.
+      stopTimer()
+      break
+
     case 'ended':
       stopTimer()
       screen('screen-home')
@@ -599,6 +635,15 @@ function wire(): void {
     })
   }
 
+  for (const prefix of ['home-error', 'exchange-error']) {
+    on(`${prefix}-close`, 'click', () => show(prefix, false))
+    on(`${prefix}-server`, 'click', () => {
+      hideFailures()
+      screen('screen-home')
+      setTab('server')
+    })
+  }
+
   on('tab-direct', 'click', () => setTab('direct'))
   on('tab-server', 'click', () => setTab('server'))
   on('action-goto-server', 'click', () => setTab('server'))
@@ -622,6 +667,7 @@ function wire(): void {
   })
 
   on('action-open-join', 'click', () => {
+    hideFailures()
     show('outgoing-block', false)
     setText('exchange-title', t('exchange.joinTitle'))
     setText('exchange-hint', t('exchange.joinHint'))

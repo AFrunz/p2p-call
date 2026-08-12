@@ -59,6 +59,23 @@
       </div>
 
       <div class="side-column">
+        <div class="notice notice--error" id="home-error" hidden>
+          <i data-lucide="circle-x"></i>
+          <div class="notice__body">
+            <strong data-i18n="error.title">Не удалось подключиться</strong>
+            <p id="home-error-note"></p>
+            <p class="hint" id="home-error-hint" hidden data-i18n="error.needServer">
+            Без сервера-ретранслятора это соединение не установится.
+            </p>
+            <div class="actions">
+              <button class="button button--primary" id="home-error-server" hidden data-i18n="direct.goServer">
+              Настроить свой сервер
+              </button>
+              <button class="button button--ghost" id="home-error-close" data-i18n="error.dismiss">Понятно</button>
+            </div>
+          </div>
+        </div>
+
         <nav class="tabs" role="tablist">
           <button class="tab is-active" id="tab-direct" role="tab" aria-selected="true" data-i18n="tabs.direct">
             Напрямую
@@ -217,6 +234,23 @@
         <button class="button button--primary" id="action-accept" data-i18n="exchange.connect">
           Подключиться
         </button>
+      </div>
+
+      <div class="notice notice--error" id="exchange-error" hidden>
+        <i data-lucide="circle-x"></i>
+        <div class="notice__body">
+          <strong data-i18n="error.title">Не удалось подключиться</strong>
+          <p id="exchange-error-note"></p>
+          <p class="hint" id="exchange-error-hint" hidden data-i18n="error.needServer">
+            Без сервера-ретранслятора это соединение не установится.
+          </p>
+          <div class="actions">
+            <button class="button button--primary" id="exchange-error-server" hidden data-i18n="direct.goServer">
+              Настроить свой сервер
+            </button>
+            <button class="button button--ghost" id="exchange-error-close" data-i18n="error.dismiss">Понятно</button>
+          </div>
+        </div>
       </div>
 
       <div class="row row--static row--busy" id="exchange-status" hidden>
