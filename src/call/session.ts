@@ -55,8 +55,18 @@ export type Phase =
   | 'failed'
   | 'ended'
 
+/**
+ * Почему звонок закончился.
+ *
+ * `peer` ставится только по явному прощанию собеседника, `lost` — когда связь
+ * оборвалась молча. Разница для пользователя существенная: в первом случае
+ * ничего не сломалось, во втором стоит проверить сеть.
+ */
+export type EndReason = 'local' | 'peer' | 'lost'
+
 export interface SessionView {
   phase: Phase
+  endReason: EndReason | null
   role: Role | null
   /** Код для передачи собеседнику (режим без сервера). */
   outgoingCode: string | null
@@ -122,6 +132,7 @@ export class CallSession {
   private readonly listeners = new Set<Listener>()
   private view: SessionView = {
     phase: 'idle',
+    endReason: null,
     role: null,
     outgoingCode: null,
     inviteLink: null,
@@ -159,6 +170,8 @@ export class CallSession {
   /** Кандидаты, собранные событиями: страховка на случай пустого SDP. */
   private gathered: string[] = []
   private restarted = false
+  /** Соединение хоть раз состоялось: обрыв после этого — не «не удалось подключиться». */
+  private wasConnected = false
 
   constructor(private options: SessionOptions) {}
 
@@ -188,7 +201,7 @@ export class CallSession {
 
   /** Захватывает камеру и параллельно проверяет сеть. */
   async prepare(): Promise<void> {
-    this.patch({ phase: 'preparing', error: null, suggestServer: false })
+    this.patch({ phase: 'preparing', error: null, suggestServer: false, endReason: null })
 
     try {
       const existing = this.options.stream ?? null
@@ -331,7 +344,10 @@ export class CallSession {
       onPeerJoined: () => {
         void this.onPeerJoined()
       },
-      onPeerLeft: () => this.patch({ error: message('session.peerLeft') }),
+      onPeerLeft: () => {
+        if (this.wasConnected) this.endCall('peer')
+        else this.patch({ error: message('session.peerLeft') })
+      },
       onSignal: (payload) => {
         void this.onSignal(payload)
       },
@@ -470,13 +486,18 @@ export class CallSession {
   private async onConnectionState(state: RTCPeerConnectionState): Promise<void> {
     if (state === 'connected') {
       this.stopWatchdog()
-      this.patch({ phase: 'connected', error: null })
+      this.wasConnected = true
+      this.patch({ phase: 'connected', error: null, endReason: null })
       this.startTimers()
       return
     }
 
     if (state === 'failed') {
       this.stopWatchdog()
+
+      // Обрыв уже состоявшегося звонка — это не «не удалось подключиться».
+      // Советовать поднять сервер тут бессмысленно: только что всё работало.
+      if (this.wasConnected) return this.endCall('lost')
 
       // Рестарт ICE имеет смысл только там, где новый offer есть кому
       // доставить. В режиме кодов сигналинга нет: раньше мы молча отправляли
@@ -678,7 +699,7 @@ export class CallSession {
       if (control.t === 'mute') {
         this.patch({ peerMuted: { ...this.view.peerMuted, [control.kind]: control.muted } })
       }
-      if (control.t === 'bye') this.patch({ error: message('session.peerHungUp') })
+      if (control.t === 'bye') this.endCall('peer')
     })
   }
 
@@ -712,8 +733,12 @@ export class CallSession {
 
   hangUp(): void {
     this.sendControl({ t: 'bye' })
+    this.endCall('local')
+  }
+
+  private endCall(reason: EndReason): void {
     this.teardown()
-    this.patch({ phase: 'ended' })
+    this.patch({ phase: 'ended', endReason: reason, error: null })
   }
 
   private teardown(): void {

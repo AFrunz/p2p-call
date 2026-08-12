@@ -320,6 +320,24 @@
       </div>
     </main>
 
+    <!-- ================= Звонок завершён ================= -->
+    <main class="app app--narrow" id="screen-ended" hidden>
+      <section class="ended">
+        <i data-lucide="phone-off" id="ended-icon"></i>
+        <h1 id="ended-title"></h1>
+        <p class="muted" id="ended-note"></p>
+        <p class="muted" id="ended-duration" hidden></p>
+        <div class="actions">
+          <button class="button button--primary" id="action-call-again" data-i18n="ended.again">
+            Позвонить снова
+          </button>
+          <button class="button button--ghost" id="action-back-home" data-i18n="ended.back">
+            На главную
+          </button>
+        </div>
+      </section>
+    </main>
+
     <!-- ================= Настройки ================= -->
     <div class="overlay" id="screen-settings" hidden>
       <section class="sheet">

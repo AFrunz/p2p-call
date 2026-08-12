@@ -29,9 +29,9 @@ import {
   showOnly,
 } from './ui/dom.js'
 import { describeConnection, formatBitrate, formatLoss, formatRoundTrip } from './ui/format.js'
-import { renderIcons } from './ui/icons.js'
+import { iconIn, renderIcons } from './ui/icons.js'
 
-const SCREENS = ['screen-home', 'screen-exchange', 'screen-call'] as const
+const SCREENS = ['screen-home', 'screen-exchange', 'screen-call', 'screen-ended'] as const
 
 let settings: Settings = loadSettings(localStorage)
 let locale: Locale = settings.locale ?? detectLocale(navigator.languages)
@@ -47,6 +47,10 @@ let lastPhase: SessionView['phase'] | null = null
 let lastNotice: string | null = null
 let lastError: string | null = null
 let callStartedAt: number | null = null
+let callSeconds = 0
+/** Фразу сверили — больше не навязываемся. */
+let sasConfirmed = false
+let toggleIcons = { audio: false, video: false }
 let timerHandle: ReturnType<typeof setInterval> | null = null
 let toastHandle: ReturnType<typeof setTimeout> | null = null
 
@@ -235,6 +239,10 @@ function toggleTrack(kind: 'audio' | 'video'): void {
   session?.setMuted(kind, !enabled)
   setPressed(kind === 'audio' ? 'toggle-mic' : 'toggle-cam', enabled)
   setPressed(kind === 'audio' ? 'call-mic' : 'call-cam', enabled)
+  renderToggleIcons(
+    kind === 'audio' ? enabled : toggleIcons.audio,
+    kind === 'video' ? enabled : toggleIcons.video,
+  )
   renderPreviewState()
   show('pip-off', kind === 'video' ? !enabled : el('pip-off').hidden === false)
 }
@@ -364,6 +372,9 @@ function hostOf(url: string): string {
 function newSession(): CallSession {
   session?.hangUp()
   hideFailures()
+  sasConfirmed = false
+  callSeconds = 0
+  show('sas-block', false)
   setDisabled('action-accept', false, '')
 
   const created = new CallSession({
@@ -489,7 +500,7 @@ function onPhase(view: SessionView): void {
 
     case 'ended':
       stopTimer()
-      screen('screen-home')
+      showEnded(view)
       break
   }
 }
@@ -502,7 +513,9 @@ function renderCall(view: SessionView): void {
   encryption.classList.toggle('badge--warn', !view.frameEncryption)
   setBadge('badge-encryption', t(view.frameEncryption ? 'encryption.e2ee' : 'encryption.transportOnly'))
 
-  if (view.sas !== null) {
+  // Раньше блок возвращался при каждой перерисовке статистики: показ был
+  // привязан только к наличию фразы и не помнил, что её уже сверили.
+  if (view.sas !== null && !sasConfirmed) {
     setText('sas-words', view.sas.join(' · '))
     show('sas-block', true)
   }
@@ -513,8 +526,35 @@ function renderCall(view: SessionView): void {
   setPressed('call-cam', !view.muted.video)
   setDisabled('call-mic', !view.canSend.audio, t('controls.micUnavailable'))
   setDisabled('call-cam', !view.canSend.video, t('controls.camUnavailable'))
+  renderToggleIcons(!view.muted.audio, !view.muted.video)
 
   renderStats(view)
+}
+
+/**
+ * Иконка тумблера должна показывать текущее состояние, а не одно и то же
+ * перечёркнутое изображение: по нему невозможно понять, включён микрофон или нет.
+ */
+function renderToggleIcons(audioOn: boolean, videoOn: boolean): void {
+  if (toggleIcons.audio === audioOn && toggleIcons.video === videoOn) return
+  toggleIcons = { audio: audioOn, video: videoOn }
+
+  const wanted: [string, string][] = [
+    ['toggle-mic', audioOn ? 'mic' : 'mic-off'],
+    ['call-mic', audioOn ? 'mic' : 'mic-off'],
+    ['toggle-cam', videoOn ? 'video' : 'video-off'],
+    ['call-cam', videoOn ? 'video' : 'video-off'],
+  ]
+
+  for (const [id, name] of wanted) {
+    const current = iconIn(el(id))
+    if (current === null) continue
+
+    const replacement = document.createElement('i')
+    replacement.setAttribute('data-lucide', name)
+    current.replaceWith(replacement)
+  }
+  renderIcons()
 }
 
 /** У бейджа первый ребёнок — иконка, подпись всегда во втором. */
@@ -547,13 +587,38 @@ function renderStats(view: SessionView): void {
   )
 }
 
+/** Итог звонка: почему он закончился и сколько длился. */
+function showEnded(view: SessionView): void {
+  const reason = view.endReason ?? 'local'
+
+  setText('ended-title', t(`ended.${reason}.title`))
+  setText('ended-note', t(`ended.${reason}.note`))
+
+  const duration = callSeconds > 0
+  show('ended-duration', duration)
+  if (duration) setText('ended-duration', t('ended.duration', { value: clock(callSeconds) }))
+
+  const icon = iconIn(el('screen-ended'))
+  if (icon !== null) {
+    const replacement = document.createElement('i')
+    replacement.setAttribute('data-lucide', reason === 'lost' ? 'unplug' : 'phone-off')
+    icon.replaceWith(replacement)
+  }
+
+  screen('screen-ended')
+  renderIcons()
+}
+
+function clock(seconds: number): string {
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 function startTimer(): void {
   callStartedAt = Date.now()
 
   const tick = () => {
-    const seconds = Math.floor((Date.now() - (callStartedAt ?? Date.now())) / 1000)
-    const minutes = String(Math.floor(seconds / 60)).padStart(2, '0')
-    setBadge('badge-timer', `${minutes}:${String(seconds % 60).padStart(2, '0')}`)
+    callSeconds = Math.floor((Date.now() - (callStartedAt ?? Date.now())) / 1000)
+    setBadge('badge-timer', clock(callSeconds))
   }
 
   tick()
@@ -756,7 +821,23 @@ function wire(): void {
     })
   })
 
-  on('action-sas-ok', 'click', () => show('sas-block', false))
+  on('action-sas-ok', 'click', () => {
+    sasConfirmed = true
+    show('sas-block', false)
+  })
+
+  on('action-back-home', 'click', () => {
+    session = null
+    lastPhase = null
+    screen('screen-home')
+  })
+
+  on('action-call-again', 'click', () => {
+    session = null
+    lastPhase = null
+    screen('screen-home')
+    setTab(settings.signalingServer === null ? 'direct' : 'server')
+  })
   on('action-hangup', 'click', () => {
     session?.hangUp()
     session = null
