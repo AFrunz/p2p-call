@@ -17,7 +17,7 @@ import { decodeMessage, encodeMessage } from '../protocol/messages.js'
 import type { ControlMessage } from '../protocol/messages.js'
 import { buildIceServers } from '../net/turn.js'
 import type { NetworkReport } from '../net/probe.js'
-import { decodeEnvelope, encodeEnvelope } from '../signaling/codec.js'
+import { FORMAT_VERSION, decodeEnvelope, encodeEnvelope } from '../signaling/codec.js'
 import { CodeFormatError } from '../signaling/codec.js'
 import type { Envelope } from '../signaling/types.js'
 
@@ -169,6 +169,8 @@ export class CallSession {
 
   private keyPair: CryptoKeyPair | null = null
   private remotePublicKey: Bytes | null = null
+  /** Умеет ли собеседник шифровать кадры. Включаем слой только если оба. */
+  private peerFrameEncryption = false
   private keys: MediaKeys | null = null
 
   private localStream: MediaStream | null = null
@@ -320,6 +322,7 @@ export class CallSession {
 
     try {
       this.remotePublicKey = envelope.publicKey
+      this.peerFrameEncryption = envelope.frameEncryption
 
       // Ответный код без своего звонка означает, что сессия уже закрылась —
       // например, по таймауту. Пытаться применить его как приглашение нельзя:
@@ -452,6 +455,7 @@ export class CallSession {
     try {
       const envelope = await decodeEnvelope(payload)
       this.remotePublicKey = envelope.publicKey
+      this.peerFrameEncryption = envelope.frameEncryption
 
       if (envelope.role === 'initiator') {
         await connection.setRemoteDescription({ type: 'offer', sdp: envelope.sdp })
@@ -676,9 +680,10 @@ export class CallSession {
     // потом некуда. Если браузер не положил их в localDescription — дописываем.
     const sdp = insertCandidates(description.sdp, this.gathered)
     const code = await encodeEnvelope({
-      version: 1,
+      version: FORMAT_VERSION,
       role,
       publicKey: await exportPublicKey(this.keyPair.publicKey),
+      frameEncryption: detectTransformSupport() !== 'none',
       sdp,
     })
 
@@ -729,6 +734,13 @@ export class CallSession {
   private startTransforms(): boolean {
     if (this.connection === null || this.keys === null) return false
     if (detectTransformSupport() === 'none') return false
+
+    // Включать шифрование в одну сторону нельзя: собеседник отдаст шифртекст
+    // прямо в декодер — звук станет шумом, видео пропадёт.
+    if (!this.peerFrameEncryption) {
+      console.debug('[p2p] собеседник не умеет шифровать кадры — слой выключен с обеих сторон')
+      return false
+    }
 
     const worker = new Worker(new URL('../crypto/media-worker.js', import.meta.url), {
       type: 'module',

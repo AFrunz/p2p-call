@@ -27,6 +27,7 @@ function envelope(patch: Partial<Envelope> = {}): Envelope {
     version: FORMAT_VERSION,
     role: 'initiator',
     publicKey: publicKey(),
+    frameEncryption: true,
     sdp: OFFER_SDP,
     ...patch,
   }
@@ -96,6 +97,15 @@ describe('encodeEnvelope / decodeEnvelope', () => {
     expect(decoded.role).toBe(original.role)
     expect(decoded.publicKey).toEqual(original.publicKey)
     expect(decoded.sdp).toBe(original.sdp)
+  })
+
+  it('переносит возможность шифровать кадры', async () => {
+    // Согласовывать обязательно: если слой включит только одна сторона, вторая
+    // отдаст шифртекст прямо в декодер — звук станет шумом, видео пропадёт.
+    for (const frameEncryption of [true, false]) {
+      const decoded = await decodeEnvelope(await encodeEnvelope(envelope({ frameEncryption })))
+      expect(decoded.frameEncryption, String(frameEncryption)).toBe(frameEncryption)
+    }
   })
 
   it('различает роли инициатора и отвечающего', async () => {

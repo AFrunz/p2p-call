@@ -5,13 +5,16 @@ import type { Envelope, Role } from './types.js'
 export const MAGIC = 0x5032 // "P2"
 
 /** Версия формата кода. Несовпадение — повод честно сказать «обнови вкладку». */
-export const FORMAT_VERSION = 1
+export const FORMAT_VERSION = 2
 
 /** Размер сырого публичного ключа ECDH P-256. */
 export const PUBLIC_KEY_BYTES = 65
 
-/** magic(2) + version(1) + role(1) + pubkey(65) + длина SDP(4). */
-const HEADER_BYTES = 2 + 1 + 1 + PUBLIC_KEY_BYTES + 4
+/** magic(2) + version(1) + role(1) + возможности(1) + pubkey(65) + длина SDP(4). */
+const HEADER_BYTES = 2 + 1 + 1 + 1 + PUBLIC_KEY_BYTES + 4
+
+/** Бит возможностей: сторона умеет шифровать кадры. */
+const FLAG_FRAME_ENCRYPTION = 1
 
 const ROLE_CODES: Record<Role, number> = { initiator: 0, responder: 1 }
 const ROLE_BY_CODE: Record<number, Role> = { 0: 'initiator', 1: 'responder' }
@@ -79,8 +82,9 @@ export async function encodeEnvelope(envelope: Envelope): Promise<string> {
   view.setUint16(0, MAGIC)
   view.setUint8(2, envelope.version)
   view.setUint8(3, ROLE_CODES[envelope.role])
-  raw.set(envelope.publicKey, 4)
-  view.setUint32(4 + PUBLIC_KEY_BYTES, sdp.length)
+  view.setUint8(4, envelope.frameEncryption ? FLAG_FRAME_ENCRYPTION : 0)
+  raw.set(envelope.publicKey, 5)
+  view.setUint32(5 + PUBLIC_KEY_BYTES, sdp.length)
   raw.set(sdp, HEADER_BYTES)
 
   return toBase32(await deflate(raw))
@@ -122,14 +126,21 @@ export async function decodeEnvelope(code: string): Promise<Envelope> {
     throw new CodeFormatError('неизвестная роль участника', 'malformed')
   }
 
-  const publicKey = raw.slice(4, 4 + PUBLIC_KEY_BYTES)
-  const sdpLength = view.getUint32(4 + PUBLIC_KEY_BYTES)
+  const flags = view.getUint8(4)
+  const publicKey = raw.slice(5, 5 + PUBLIC_KEY_BYTES)
+  const sdpLength = view.getUint32(5 + PUBLIC_KEY_BYTES)
   if (raw.length !== HEADER_BYTES + sdpLength) {
     throw new CodeFormatError('код обрезан: SDP не совпал с заявленной длиной', 'truncated')
   }
 
   const sdp = new TextDecoder().decode(raw.subarray(HEADER_BYTES))
-  return { version, role, publicKey, sdp }
+  return {
+    version,
+    role,
+    publicKey,
+    frameEncryption: (flags & FLAG_FRAME_ENCRYPTION) !== 0,
+    sdp,
+  }
 }
 
 /** Терпимо чистит вставленный пользователем код: пробелы, переносы, URL-обёртка. */
