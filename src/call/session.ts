@@ -35,6 +35,7 @@ import {
   extractFingerprint,
   insertCandidates,
   parseCandidateLine,
+  stripCandidates,
 } from '../signaling/sdp.js'
 import type { Role } from '../signaling/types.js'
 import type { QualityPreset } from '../media/quality.js'
@@ -53,14 +54,6 @@ const CONNECT_TIMEOUT_MS = { manual: 180_000, signaling: 45_000 }
 
 /** Сколько раз пересобираем ответ, пока собеседник несёт код. */
 const MAX_ANSWER_REFRESH = 3
-
-/**
- * Сколько живёт ответный код.
- *
- * Это не наша настройка, а бюджет браузера: примерно столько ICE проверяет
- * пары, не получая ответа, прежде чем сдаться. Растянуть его нечем.
- */
-const CODE_LIFETIME_MS = 30_000
 
 export type Phase =
   | 'idle'
@@ -125,6 +118,8 @@ export interface SessionOptions {
   signalingServer?: string | null
   /** Базовый адрес страницы для сборки ссылки. */
   pageUrl: string
+  /** Через сколько секунд после готовности ответа стороны начнут проверку. */
+  connectDelay?: number
   /**
    * Уже захваченный поток с главного экрана.
    *
@@ -195,6 +190,9 @@ export class CallSession {
   private gathered: string[] = []
   /** Приглашение собеседника: по нему пересобираем ответ, если ICE отвалился. */
   private pendingOffer: string | null = null
+  /** Кандидаты собеседника, придержанные до готовности человека. */
+  private heldCandidates: string[] = []
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null
   private refreshes = 0
   private restarted = false
   /** Соединение хоть раз состоялось: обрыв после этого — не «не удалось подключиться». */
@@ -220,6 +218,11 @@ export class CallSession {
 
   get phase(): Phase {
     return this.view.phase
+  }
+
+  /** Ждём ли нажатия «код вставлен»: кандидаты придержаны, проверка не начата. */
+  get isHoldingCandidates(): boolean {
+    return this.heldCandidates.length > 0
   }
 
   /** Есть ли что обновлять: приглашение сохранено и мы отвечающая сторона. */
@@ -343,12 +346,15 @@ export class CallSession {
         // Кандидатов собеседника придерживаем: без них парам не из чего
         // строиться, ICE не начинает проверку и не сдаётся через полминуты,
         // пока человек несёт код на второе устройство.
-        // Приостановить ICE нечем: без кандидатов агент объявляет провал на
-        // пустом списке пар, а перезапуск меняет учётные данные, которые уже
-        // уехали в коде. Поэтому проверка стартует сразу, а срок годности
-        // ответного кода мы честно показываем обеим сторонам.
-        this.patch({ startAt: Date.now() + CODE_LIFETIME_MS })
-        await connection.setRemoteDescription({ type: 'offer', sdp: envelope.sdp })
+        const held = this.signaling === null ? stripCandidates(envelope.sdp) : null
+        this.heldCandidates = held?.candidates ?? []
+        if (held !== null) {
+          // Момент назначает отвечающий и кладёт его в ответный код: у обеих
+          // сторон он получается общим, а не «у каждого свой отсчёт».
+          this.scheduleRelease(Date.now() + (this.options.connectDelay ?? 60) * 1000)
+        }
+
+        await connection.setRemoteDescription({ type: 'offer', sdp: held?.sdp ?? envelope.sdp })
         await connection.setLocalDescription(await connection.createAnswer())
         await waitForGathering(connection)
 
@@ -358,10 +364,14 @@ export class CallSession {
 
         // Придерживаем и здесь: иначе ожидание в пустоту просто переезжает на
         // эту сторону, пока человек идёт в мессенджер сказать «я вставил».
-        // Срок годности назначил отвечающий — показываем тот же самый, чтобы
-        // обе стороны видели одно и то же окно.
-        if (envelope.startAt > 0) this.patch({ startAt: envelope.startAt })
-        await this.connection.setRemoteDescription({ type: 'answer', sdp: envelope.sdp })
+        const answer = this.signaling === null ? stripCandidates(envelope.sdp) : null
+        this.heldCandidates = answer?.candidates ?? []
+        if (answer !== null) this.scheduleRelease(envelope.startAt)
+
+        await this.connection.setRemoteDescription({
+          type: 'answer',
+          sdp: answer?.sdp ?? envelope.sdp,
+        })
         this.patch({ phase: 'connecting' })
       }
 
@@ -516,8 +526,9 @@ export class CallSession {
         this.trace(event)
         this.patch({ iceState: connection.iceConnectionState })
 
-        // Отсчёт начинаем с момента, когда пары действительно проверяются, —
-        // а пока кандидаты придержаны, проверять нечего.
+        // Отсчёт начинаем с момента, когда пары действительно проверяются.
+        // Раньше он стартовал сразу после генерации ответного кода — и тикал,
+        // пока человек переносил этот код в другую вкладку.
         if (connection.iceConnectionState === 'checking') this.startWatchdog()
         if (connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') {
           this.stopWatchdog()
@@ -562,12 +573,12 @@ export class CallSession {
     }
 
     if (state === 'failed') {
-      // До обмена кодами и пока кандидаты придержаны проверять нечего: список
-      // пар пуст, и агент делает вывод «соединяться не с чем». Вывод верный,
-      // но преждевременный — кандидаты мы отдадим по расписанию, и пары
-      // построятся тогда же.
+      // До обмена кодами проверять нечего: удалённого описания нет, пары не
+      // строятся. Провал в этот момент — не отказ сети, а следствие того, что
+      // вкладку свернули или усыпили. Хоронить из-за него звонок нельзя: код
+      // уже унесли на второе устройство.
       if (this.view.phase === 'awaiting-exchange') {
-        console.debug('[p2p] провал ICE до начала проверки — игнорируем')
+        console.debug('[p2p] провал ICE до обмена кодами — игнорируем')
         return
       }
 
@@ -607,6 +618,48 @@ export class CallSession {
   }
 
   /**
+   * Отдаёт придержанных кандидатов и запускает проверку пар.
+   *
+   * Нажимается человеком, когда обе стороны вставили коды. Достаточно нажатия
+   * с одной стороны: вторая, даже придерживая своих кандидатов, отвечает на
+   * входящие проверки и достраивает пару сама.
+   */
+  /**
+   * Назначает общий момент старта.
+   *
+   * Часы устройств расходятся на секунды, а ICE ретранслирует проверки
+   * десятками секунд — такого запаса хватает. Момент из прошлого означает, что
+   * человек нёс код дольше расписания: тогда начинаем сразу.
+   */
+  private scheduleRelease(startAt: number): void {
+    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
+
+    const wait = Math.max(0, startAt - Date.now())
+    this.patch({ startAt })
+    this.releaseTimer = setTimeout(() => void this.startChecking(), wait)
+  }
+
+  async startChecking(): Promise<void> {
+    const connection = this.connection
+    const held = this.heldCandidates
+    if (connection === null || held.length === 0) return
+
+    this.heldCandidates = []
+    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
+    this.releaseTimer = null
+    this.patch({ startAt: null })
+
+    for (const candidate of held) {
+      try {
+        await connection.addIceCandidate({ candidate, sdpMLineIndex: 0 })
+      } catch {
+        // Один непринятый кандидат не повод бросать остальные.
+      }
+    }
+    this.patch({ phase: 'connecting' })
+  }
+
+  /**
    * Пересобирает ответ на то же приглашение с новыми ICE-данными.
    *
    * Возвращает true, если получилось: тогда в интерфейсе появляется свежий код
@@ -631,8 +684,10 @@ export class CallSession {
       await this.openConnection('responder')
       const connection = this.connection!
 
-      this.patch({ startAt: Date.now() + CODE_LIFETIME_MS })
-      await connection.setRemoteDescription({ type: 'offer', sdp: offer })
+      const held = stripCandidates(offer)
+      this.heldCandidates = held.candidates
+
+      await connection.setRemoteDescription({ type: 'offer', sdp: held.sdp })
       await connection.setLocalDescription(await connection.createAnswer())
       await waitForGathering(connection)
 
@@ -925,6 +980,8 @@ export class CallSession {
 
   private teardown(): void {
     this.stopWatchdog()
+    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
+    this.releaseTimer = null
     if (this.statsTimer !== null) clearInterval(this.statsTimer)
     if (this.ratchetTimer !== null) clearInterval(this.ratchetTimer)
     this.statsTimer = null
