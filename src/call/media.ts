@@ -190,7 +190,9 @@ async function attempt(
 ): Promise<MediaStream | null> {
   try {
     return await provider.getUserMedia(constraints)
-  } catch {
+  } catch (error) {
+    const kind = constraints.video === false ? 'микрофон' : 'камера'
+    console.debug(`[p2p] ${kind} недоступна:`, error instanceof Error ? error.name : error)
     return null
   }
 }

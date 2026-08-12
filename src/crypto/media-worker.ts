@@ -49,8 +49,13 @@ interface ReceiverState {
 const senders = new Map<string, SenderState>()
 const receivers = new Map<string, ReceiverState>()
 
-/** Кадры, которые не удалось расшифровать, — считаем, чтобы показать в интерфейсе. */
-let failures = 0
+/** Счётчики по каждому потоку: без них не понять, доходят ли кадры вообще. */
+const counters = new Map<string, { ok: number; failed: number }>()
+
+function report(id: string, reason?: string): void {
+  const state = counters.get(id) ?? { ok: 0, failed: 0 }
+  self.postMessage({ t: 'stats', id, ok: state.ok, failed: state.failed, reason })
+}
 
 interface EncodedFrame {
   data: ArrayBuffer
@@ -153,17 +158,24 @@ async function keyForGeneration(state: ReceiverState, keyId: number): Promise<Cr
 function transformer(options: TransformOptions): TransformStream {
   const apply = options.direction === 'send' ? encrypt : decrypt
 
+  const id = streamKey(options)
+  counters.set(id, { ok: 0, failed: 0 })
+
   return new TransformStream({
     async transform(frame: EncodedFrame, controller) {
+      const state = counters.get(id)!
       try {
         await apply(frame, options)
         controller.enqueue(frame)
-      } catch {
+
+        state.ok++
+        if (state.ok === 1 || state.ok % 200 === 0) report(id)
+      } catch (error) {
         // Битый или чужой кадр просто выбрасываем: уронив поток, мы оборвали
         // бы весь звонок из-за одного пакета.
-        failures++
-        if (failures % 50 === 1) {
-          self.postMessage({ t: 'decrypt-failures', count: failures })
+        state.failed++
+        if (state.failed === 1 || state.failed % 200 === 0) {
+          report(id, error instanceof Error ? error.message : String(error))
         }
       }
     },
@@ -187,6 +199,8 @@ function pipe(
 self.addEventListener('rtctransform', (event) => {
   const transform = (event as Event & { transformer: RTCRtpScriptTransformer }).transformer
   const options = transform.options as TransformOptions
+
+  self.postMessage({ t: 'attached', id: streamKey(options), codec: options.codec })
   pipe(transform.readable, transform.writable, options)
 })
 

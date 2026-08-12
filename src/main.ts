@@ -220,17 +220,26 @@ function syncAvailability(): void {
   const hasAudio = (previewStream?.getAudioTracks().length ?? 0) > 0
   const hasVideo = (previewStream?.getVideoTracks().length ?? 0) > 0
 
-  setDisabled('toggle-mic', !hasAudio, t('controls.micUnavailable'))
-  setDisabled('toggle-cam', !hasVideo, t('controls.camUnavailable'))
+  // Кнопки не блокируем: нажатие — это ещё одна попытка получить устройство.
+  el('toggle-mic').title = hasAudio ? '' : t('controls.micUnavailable')
+  el('toggle-cam').title = hasVideo ? '' : t('controls.camUnavailable')
 }
 
 /**
  * Микрофон и камера переключаются одной ручкой и на главном экране, и в звонке.
  * Источник правды — дорожки локального потока, поэтому состояние берём из них.
  */
-function toggleTrack(kind: 'audio' | 'video'): void {
+async function toggleTrack(kind: 'audio' | 'video'): Promise<void> {
   const stream = session?.media.local ?? previewStream
-  const tracks = kind === 'audio' ? stream?.getAudioTracks() : stream?.getVideoTracks()
+  let tracks = kind === 'audio' ? stream?.getAudioTracks() : stream?.getVideoTracks()
+
+  // Устройства могло не быть при захвате — занята камера, отозвано разрешение.
+  // Спрашиваем ещё раз по нажатию, а не выключаем кнопку до конца сеанса.
+  if (stream !== null && stream !== undefined && (tracks === undefined || tracks.length === 0)) {
+    const added = await acquireTrack(kind, stream)
+    if (!added) return
+    tracks = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
+  }
   if (tracks === undefined || tracks.length === 0) return
 
   const enabled = !(tracks[0]?.enabled ?? false)
@@ -245,6 +254,28 @@ function toggleTrack(kind: 'audio' | 'video'): void {
   )
   renderPreviewState()
   show('pip-off', kind === 'video' ? !enabled : el('pip-off').hidden === false)
+}
+
+/** Досдаёт одну дорожку в уже живой поток. */
+async function acquireTrack(kind: 'audio' | 'video', stream: MediaStream): Promise<boolean> {
+  const media = await requestMedia({
+    preset: settings.quality,
+    ...(kind === 'video' ? { cameraId: settings.cameraId } : { microphoneId: settings.microphoneId }),
+  })
+
+  const [track] = kind === 'audio' ? media.stream.getAudioTracks() : media.stream.getVideoTracks()
+  if (track === undefined) {
+    const problem = media.problem?.text ?? describeMissing(media.missing)
+    toast(problem === null ? t('controls.camUnavailable') : tm(problem))
+    return false
+  }
+
+  track.enabled = false
+  stream.addTrack(track)
+  if (session !== null) await session.attachTrack(track)
+
+  syncAvailability()
+  return true
 }
 
 async function fillDevices(): Promise<void> {
@@ -524,11 +555,12 @@ function renderCall(view: SessionView): void {
   }
 
   show('call-off', view.peerMuted.video)
+  show('badge-peer-mic', view.peerMuted.audio)
   show('pip-off', view.muted.video)
   setPressed('call-mic', !view.muted.audio)
   setPressed('call-cam', !view.muted.video)
-  setDisabled('call-mic', !view.canSend.audio, t('controls.micUnavailable'))
-  setDisabled('call-cam', !view.canSend.video, t('controls.camUnavailable'))
+  el('call-mic').title = view.canSend.audio ? '' : t('controls.micUnavailable')
+  el('call-cam').title = view.canSend.video ? '' : t('controls.camUnavailable')
   renderToggleIcons(!view.muted.audio, !view.muted.video)
 
   renderStats(view)
@@ -703,10 +735,10 @@ function wire(): void {
     renderServerPanel()
   })
 
-  on('toggle-mic', 'click', () => toggleTrack('audio'))
-  on('toggle-cam', 'click', () => toggleTrack('video'))
-  on('call-mic', 'click', () => toggleTrack('audio'))
-  on('call-cam', 'click', () => toggleTrack('video'))
+  on('toggle-mic', 'click', () => void toggleTrack('audio'))
+  on('toggle-cam', 'click', () => void toggleTrack('video'))
+  on('call-mic', 'click', () => void toggleTrack('audio'))
+  on('call-cam', 'click', () => void toggleTrack('video'))
 
   for (const [id, key] of [
     ['select-camera', 'cameraId'],

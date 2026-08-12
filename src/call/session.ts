@@ -443,12 +443,13 @@ export class CallSession {
     const tracks = this.localStream?.getTracks() ?? []
     for (const track of tracks) connection.addTrack(track, this.localStream!)
 
-    // Без собственной дорожки m-строка не появится, и мы не получим встречный
-    // поток. Явный recvonly-трансивер оставляет возможность смотреть и слушать
-    // тому, у кого камеры и микрофона нет.
+    // Без собственной дорожки m-строка не появится, и встречный поток не
+    // придёт. Направление sendrecv, а не recvonly: тогда камеру, занятую в
+    // момент старта, можно подставить позже через replaceTrack — без нового
+    // обмена кодами, которого в ручном режиме взять негде.
     for (const kind of ['audio', 'video'] as const) {
       if (!tracks.some((track) => track.kind === kind)) {
-        connection.addTransceiver(kind, { direction: 'recvonly' })
+        connection.addTransceiver(kind, { direction: 'sendrecv' })
       }
     }
 
@@ -612,10 +613,33 @@ export class CallSession {
     if (this.connection === null || this.keys === null) return false
     if (detectTransformSupport() === 'none') return false
 
-    this.worker = new Worker(new URL('../crypto/media-worker.js', import.meta.url), {
+    const worker = new Worker(new URL('../crypto/media-worker.js', import.meta.url), {
       type: 'module',
     })
-    return attachAll(this.worker, this.connection, this.keys)
+    this.worker = worker
+
+    // Без этих сообщений неясно даже, доехали ли кадры до воркера: медиа
+    // ломается тихо, соединение при этом выглядит здоровым.
+    worker.addEventListener('error', (event) => {
+      console.debug('[p2p] воркер шифрования не запустился:', event.message)
+    })
+    worker.addEventListener('message', (event: MessageEvent) => {
+      const data = event.data as { t?: string; id?: string; ok?: number; failed?: number; reason?: string; codec?: string }
+      if (data.t === 'attached') console.debug(`[p2p] шифрование включено: ${data.id} (${data.codec})`)
+      if (data.t === 'stats') {
+        console.debug(
+          `[p2p] кадры ${data.id}: обработано ${data.ok}, отброшено ${data.failed}` +
+            (data.reason === undefined ? '' : ` — ${data.reason}`),
+        )
+      }
+    })
+
+    const attached = attachAll(worker, this.connection, this.keys)
+    console.debug(
+      `[p2p] трансформ навешен: ${attached}, отправителей ${this.connection.getSenders().length},` +
+        ` получателей ${this.connection.getReceivers().length}`,
+    )
+    return attached
   }
 
   /**
@@ -746,6 +770,28 @@ export class CallSession {
     for (const track of tracks ?? []) track.enabled = !muted
     this.patch({ muted: { ...this.view.muted, [kind]: muted } })
     this.sendControl({ t: 'mute', kind, muted })
+  }
+
+  /**
+   * Подставляет дорожку, добытую уже во время звонка.
+   *
+   * Трансиверы созданы заранее, поэтому замена не требует нового обмена
+   * кодами — иначе занятая на старте камера оставалась бы недоступной до
+   * конца разговора.
+   */
+  async attachTrack(track: MediaStreamTrack): Promise<void> {
+    const sender = this.connection
+      ?.getTransceivers()
+      .find((item) => item.receiver.track.kind === track.kind)?.sender
+
+    if (sender !== undefined) await sender.replaceTrack(track)
+    this.localStream?.addTrack(track)
+
+    const kind = track.kind === 'audio' ? 'audio' : 'video'
+    this.patch({
+      canSend: { ...this.view.canSend, [kind]: true },
+      muted: { ...this.view.muted, [kind]: !track.enabled },
+    })
   }
 
   /** Текущее состояние своих дорожек — нужно интерфейсу для кнопок. */
