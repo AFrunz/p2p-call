@@ -44,12 +44,15 @@ import type { CallStats } from './peer.js'
 import { attachAll, detectTransformSupport } from './transform.js'
 
 /**
- * Сколько ждём соединения с момента, когда ICE начал проверять пары.
+ * Сколько ждём соединения после начала проверки пар.
  *
- * Отсчитывать раньше нельзя: в режиме кодов между генерацией ответа и его
- * применением на той стороне стоит человек с буфером обмена.
+ * В режиме кодов между генерацией ответа и его применением стоит человек с
+ * буфером обмена, поэтому запас втрое больше, чем при живом сигналинге.
  */
-const CONNECT_TIMEOUT_MS = 30_000
+const CONNECT_TIMEOUT_MS = { manual: 180_000, signaling: 45_000 }
+
+/** Сколько раз пересобираем ответ, пока собеседник несёт код. */
+const MAX_ANSWER_REFRESH = 3
 
 export type Phase =
   | 'idle'
@@ -177,6 +180,9 @@ export class CallSession {
   private watchdog: ReturnType<typeof setTimeout> | null = null
   /** Кандидаты, собранные событиями: страховка на случай пустого SDP. */
   private gathered: string[] = []
+  /** Приглашение собеседника: по нему пересобираем ответ, если ICE отвалился. */
+  private pendingOffer: string | null = null
+  private refreshes = 0
   private restarted = false
   /** Соединение хоть раз состоялось: обрыв после этого — не «не удалось подключиться». */
   private wasConnected = false
@@ -313,6 +319,7 @@ export class CallSession {
         await this.openConnection('responder')
         const connection = this.connection!
 
+        this.pendingOffer = envelope.sdp
         await connection.setRemoteDescription({ type: 'offer', sdp: envelope.sdp })
         await connection.setLocalDescription(await connection.createAnswer())
         await waitForGathering(connection)
@@ -527,6 +534,12 @@ export class CallSession {
       // Советовать поднять сервер тут бессмысленно: только что всё работало.
       if (this.wasConnected) return this.endCall('lost')
 
+      // Отвечающий начинает проверять пары сразу, а инициатор — только получив
+      // ответный код. Всё это время браузер долбится в тишину и секунд через
+      // тридцать сдаётся сам. Пересобираем ответ вместо того, чтобы хоронить
+      // звонок: человек ещё несёт код.
+      if (await this.refreshAnswer()) return
+
       // Рестарт ICE имеет смысл только там, где новый offer есть кому
       // доставить. В режиме кодов сигналинга нет: раньше мы молча отправляли
       // его в никуда и возвращались, оставляя пользователя без ответа.
@@ -547,6 +560,43 @@ export class CallSession {
       // закрытом уже ничего не расскажет — выкладка терялась целиком.
       const summary = await this.dumpCandidates()
       this.fail(unreachableMessage(this.view.network, summary), true)
+    }
+  }
+
+  /**
+   * Пересобирает ответ на то же приглашение с новыми ICE-данными.
+   *
+   * Возвращает true, если получилось: тогда в интерфейсе появляется свежий код
+   * взамен протухшего, и обмен можно закончить спокойно.
+   */
+  private async refreshAnswer(): Promise<boolean> {
+    const offer = this.pendingOffer
+    if (offer === null || this.signaling !== null) return false
+    if (this.view.role !== 'responder' || this.refreshes >= MAX_ANSWER_REFRESH) return false
+
+    this.refreshes++
+    try {
+      this.connection?.close()
+      this.worker?.terminate()
+      this.worker = null
+      this.keys = null
+      this.gathered = []
+
+      await this.openConnection('responder')
+      const connection = this.connection!
+
+      await connection.setRemoteDescription({ type: 'offer', sdp: offer })
+      await connection.setLocalDescription(await connection.createAnswer())
+      await waitForGathering(connection)
+
+      this.patch({
+        outgoingCode: await this.buildCode('responder'),
+        notice: message('session.answerRefreshed'),
+      })
+      await this.establishKeys()
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -658,7 +708,7 @@ export class CallSession {
       void this.dumpCandidates().then((summary) => {
         this.fail(unreachableMessage(this.view.network, summary), true)
       })
-    }, CONNECT_TIMEOUT_MS)
+    }, this.signaling === null ? CONNECT_TIMEOUT_MS.manual : CONNECT_TIMEOUT_MS.signaling)
   }
 
   /**

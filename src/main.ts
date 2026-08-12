@@ -432,6 +432,13 @@ function render(view: SessionView): void {
   if (view.notice !== null && view.notice.key !== lastNotice) {
     lastNotice = view.notice.key
     toast(tm(view.notice))
+
+    // Обновлённый код надо не просто показать, а объяснить: человек уже
+    // отправил прежний и ждёт результата.
+    if (view.notice.key === 'session.answerRefreshed') {
+      setText('exchange-status-text', tm(view.notice))
+      show('exchange-status', true)
+    }
   }
   if (view.error !== null && view.error.key !== lastError) {
     lastError = view.error.key

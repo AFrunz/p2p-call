@@ -257,4 +257,5 @@ export const en: Record<string, string> = {
   'session.answerWithoutOffer': 'This is a reply code, but your call is already closed — it probably timed out. Start a new call and exchange codes again.',
   'exchange.chars': '{count} characters',
   'call.peerMicOff': "the other person's microphone is off",
+  'session.answerRefreshed': 'The previous reply code expired while you were carrying it over. Send the new one from the field above.',
 }
