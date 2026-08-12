@@ -496,8 +496,8 @@ export class CallSession {
       }
       // Обязательно ДО fail: teardown закрывает соединение, а getStats на
       // закрытом уже ничего не расскажет — выкладка терялась целиком.
-      await this.dumpCandidates()
-      this.fail(unreachableMessage(this.view.network), true)
+      const summary = await this.dumpCandidates()
+      this.fail(unreachableMessage(this.view.network, summary), true)
     }
   }
 
@@ -580,8 +580,8 @@ export class CallSession {
       if (this.view.phase === 'connected') return
       this.trace('сторожевой таймер')
 
-      void this.dumpCandidates().then(() => {
-        this.fail(unreachableMessage(this.view.network), true)
+      void this.dumpCandidates().then((summary) => {
+        this.fail(unreachableMessage(this.view.network, summary), true)
       })
     }, CONNECT_TIMEOUT_MS)
   }
@@ -594,9 +594,10 @@ export class CallSession {
    * в SDP. Пары в состоянии failed при ненулевых обеих сторонах означают
    * обратное — до сети дошло, а она не пустила.
    */
-  private async dumpCandidates(): Promise<void> {
+  private async dumpCandidates(): Promise<IceSummary> {
+    const empty: IceSummary = { local: 0, remote: 0, pairs: 0, sameHost: false }
     const connection = this.connection
-    if (connection === null) return
+    if (connection === null) return empty
 
     try {
       const report = await connection.getStats()
@@ -627,8 +628,20 @@ export class CallSession {
         const [from, to] = (ids ?? '').split('->')
         console.debug('[p2p] пара', state, local.get(from ?? '') ?? from, '->', remote.get(to ?? '') ?? to)
       }
+
+      // Совпадение адресов у обеих сторон означает, что участники сидят на
+      // одной машине. Тогда NAT ни при чём, и советовать сменить Wi-Fi — врать.
+      const addresses = (source: Map<string, string>) =>
+        new Set([...source.values()].map((text) => text.split(' ')[1]?.split(':')[0] ?? ''))
+      const mine = addresses(local)
+      const sameHost = [...addresses(remote)].some(
+        (address) => address.length > 0 && mine.has(address),
+      )
+
+      return { local: local.size, remote: remote.size, pairs: pairs.length, sameHost }
     } catch (error) {
       console.debug('[p2p] статистика недоступна:', error)
+      return empty
     }
   }
 
@@ -753,13 +766,25 @@ function describe(error: unknown): Message {
   return error instanceof SessionError ? message(error.key) : message('session.unknownError')
 }
 
+/** Что удалось узнать про ICE к моменту провала. */
+export interface IceSummary {
+  local: number
+  remote: number
+  pairs: number
+  /** Обе стороны на одной машине: адреса кандидатов совпадают. */
+  sameHost: boolean
+}
+
 /**
  * Текст для случая, когда все пути исчерпаны.
  *
- * Уточнение про тип NAT — отдельный ключ, а не склейка строк: собирать фразу
- * из кусков на разных языках нельзя, порядок слов везде свой.
+ * Уточнение — отдельный ключ, а не склейка строк: собирать фразу из кусков на
+ * разных языках нельзя, порядок слов везде свой.
  */
-function unreachableMessage(network: NetworkReport | null): Message {
+function unreachableMessage(network: NetworkReport | null, ice?: IceSummary): Message {
+  // Участники на одной машине — про NAT говорить бессмысленно, мешает что-то
+  // локальное. Совет «смените мобильный интернет на Wi-Fi» тут просто ложь.
+  if (ice?.sameHost === true) return message('session.unreachable.sameHost')
   if (network?.verdict === 'symmetric') return message('session.unreachable.symmetric')
   if (network?.verdict === 'blocked') return message('session.unreachable.blocked')
   return message('session.unreachable')

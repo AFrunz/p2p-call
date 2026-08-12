@@ -243,4 +243,5 @@ export const en: Record<string, string> = {
   'error.dismiss': 'Got it',
   'exchange.answerCode': 'Your reply code — send it back',
   'status.sendAnswer': 'The reply code is ready — send it back and wait until the other side pastes it.',
+  'session.unreachable.sameHost': 'Both sides are on the same machine and their candidate addresses match, so the obstacle is not NAT but something local: a firewall, a VPN, or a security policy that drops UDP between processes. A relay server gets around it, but the real cause is in the machine or network settings.',
 }
