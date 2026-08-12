@@ -12,7 +12,7 @@ import {
   mixRoomSecret,
 } from '../crypto/kdf.js'
 import type { MediaKeys } from '../crypto/kdf.js'
-import { deriveSas } from '../crypto/sas.js'
+import { compareBytes, deriveSas } from '../crypto/sas.js'
 import { decodeMessage, encodeMessage } from '../protocol/messages.js'
 import type { ControlMessage } from '../protocol/messages.js'
 import { buildIceServers } from '../net/turn.js'
@@ -702,7 +702,15 @@ export class CallSession {
     this.keepAliveTimer = null
   }
 
-  async startChecking(): Promise<void> {
+  /**
+   * Отпускает придержанных кандидатов. Вызывается только по расписанию.
+   *
+   * Кнопки «начать сейчас» здесь быть не может: отпустив кандидатов в одиночку,
+   * сторона начинает проверки, на которые вторая ещё не отвечает, и сжигает
+   * своё окно до общего момента. Согласовать досрочный старт нечем — канала
+   * между сторонами до соединения нет.
+   */
+  private async startChecking(): Promise<void> {
     const connection = this.connection
     const held = this.heldCandidates
     if (connection === null || held.length === 0) return
@@ -825,7 +833,13 @@ export class CallSession {
       return this.fail(message('session.noFingerprint'))
     }
 
-    const salt = concat(localFingerprint, remoteFingerprint)
+    // Порядок канонический, как в SAS: local||remote у сторон разный, и с
+    // парольной фразой ключи разъезжались бы, а расшифровка молча падала.
+    const [first, second] =
+      compareBytes(localFingerprint, remoteFingerprint) <= 0
+        ? [localFingerprint, remoteFingerprint]
+        : [remoteFingerprint, localFingerprint]
+    const salt = concat(first, second)
     const ecdh = await deriveSharedSecret(
       this.keyPair.privateKey,
       await importPublicKey(this.remotePublicKey),
@@ -867,11 +881,17 @@ export class CallSession {
     worker.addEventListener('message', (event: MessageEvent) => {
       const data = event.data as { t?: string; id?: string; ok?: number; failed?: number; reason?: string; codec?: string }
       if (data.t === 'attached') console.debug(`[p2p] шифрование включено: ${data.id} (${data.codec})`)
-      if (data.t === 'stats') {
-        console.debug(
-          `[p2p] кадры ${data.id}: обработано ${data.ok}, отброшено ${data.failed}` +
-            (data.reason === undefined ? '' : ` — ${data.reason}`),
-        )
+      if (data.t !== 'stats') return
+
+      console.debug(
+        `[p2p] кадры ${data.id}: обработано ${data.ok}, отброшено ${data.failed}` +
+          (data.reason === undefined ? '' : ` — ${data.reason}`),
+      )
+
+      // Свои провалы расшифровки собеседник у себя не видит: у него всё
+      // отправляется штатно. Поэтому сообщаем их сами.
+      if (data.id?.endsWith('/recv') === true) {
+        this.sendControl({ t: 'frames', ok: data.ok ?? 0, failed: data.failed ?? 0 })
       }
     })
 
@@ -995,8 +1015,23 @@ export class CallSession {
       if (control.t === 'mute') {
         this.patch({ peerMuted: { ...this.view.peerMuted, [control.kind]: control.muted } })
       }
+      if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
       if (control.t === 'bye') this.endCall('peer')
     })
+  }
+
+  /**
+   * Что собеседник сделал с нашими кадрами.
+   *
+   * Ноль расшифрованных при растущем счётчике отброшенных означает, что наш
+   * поток до него доезжает, но читается как мусор: у нас шифрование включено,
+   * у него — нет. В своей консоли этого не видно, отсюда и отчёт.
+   */
+  private onPeerFrames(ok: number, failed: number): void {
+    console.debug(`[p2p] собеседник о наших кадрах: расшифровал ${ok}, отбросил ${failed}`)
+    if (ok > 0 || failed < 100) return
+
+    this.patch({ notice: message('session.peerCannotDecrypt') })
   }
 
   private sendControl(control: ControlMessage): void {

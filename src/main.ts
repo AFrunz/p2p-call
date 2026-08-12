@@ -915,12 +915,6 @@ function wire(): void {
     )
   })
 
-  on('action-answer-sent', 'click', () => {
-    void withBusy('action-answer-sent', 'exchange.connecting', async () => {
-      await session?.startChecking()
-    })
-  })
-
   on('action-refresh-answer', 'click', () => {
     void withBusy('action-refresh-answer', 'exchange.connecting', async () => {
       const ok = await session?.refreshAnswer(true)

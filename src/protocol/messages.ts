@@ -11,6 +11,7 @@ export type ControlMessage =
   | { t: 'keyRotate'; keyId: number }
   | { t: 'ping'; ts: number }
   | { t: 'pong'; ts: number }
+  | { t: 'frames'; ok: number; failed: number }
   | { t: 'bye' }
 
 export function encodeMessage(message: ControlMessage): string {
@@ -56,11 +57,21 @@ export function decodeMessage(raw: string): ControlMessage | null {
       const ts = source['ts']
       return isTimestamp(ts) ? { t: 'pong', ts } : null
     }
+    case 'frames': {
+      const ok = source['ok']
+      const failed = source['failed']
+      if (!isCount(ok) || !isCount(failed)) return null
+      return { t: 'frames', ok, failed }
+    }
     case 'bye':
       return { t: 'bye' }
     default:
       return null
   }
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
 
 function isByte(value: unknown): value is number {

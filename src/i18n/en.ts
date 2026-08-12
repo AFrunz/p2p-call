@@ -263,10 +263,10 @@ export const en: Record<string, string> = {
   'exchange.refreshed': 'Code refreshed — send this one.',
   'exchange.sentHint': 'The clock does not run until you press. Press once both sides have pasted their codes — one of you is enough.',
   'exchange.sent': 'Both codes are in — connect',
-  'exchange.connectNow': 'Start now',
   'exchange.countdown': 'Connecting in {value} — enough time to carry the code over. Both sides start at once.',
   'exchange.countdownNow': 'Connecting…',
   'settings.delay': 'CONNECTION DELAY',
   'settings.delayHint': 'How much time you get to carry the code over. Both sides start checking at the same moment — the answering side picks it and puts it in the code.',
   'settings.delaySeconds': '{value} seconds',
+  'session.peerCannotDecrypt': 'The other side cannot decrypt our stream: frame encryption did not turn on there. Reload both pages — capabilities are agreed during the code exchange.',
 }
