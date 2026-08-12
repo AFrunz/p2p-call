@@ -1,0 +1,80 @@
+name: p2p-call
+
+# Разворачивается одной командой:  docker compose up -d
+# Перед этим нужно заполнить .env (см. .env.example) и направить A/AAAA-запись
+# домена на этот сервер — Caddy сам получит сертификат Let's Encrypt.
+
+services:
+  # TLS-терминация и обратный прокси до сигналинга. Без HTTPS браузер не даст
+  # странице с github.io открыть websocket: это будет mixed content.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?заполните DOMAIN в .env}
+      ACME_EMAIL: ${ACME_EMAIL:?заполните ACME_EMAIL в .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - signaling
+
+  # Сигнальный сервер: ретранслирует запечатанные блобы и выдаёт временные
+  # учётные данные TURN. Содержимого сообщений не видит и не логирует.
+  signaling:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    expose:
+      - '8080'
+    environment:
+      PORT: '8080'
+      TURN_HOST: ${DOMAIN}
+      TURN_SECRET: ${TURN_SECRET:?заполните TURN_SECRET в .env}
+      TURN_PORT: ${TURN_PORT:-3478}
+      TURN_CREDENTIAL_TTL: ${TURN_CREDENTIAL_TTL:-3600}
+      MAX_ROOMS: ${MAX_ROOMS:-500}
+      ROOM_TTL_SECONDS: ${ROOM_TTL_SECONDS:-600}
+
+  # Ретранслятор для тех, кому не хватило прямого соединения.
+  #
+  # network_mode: host — вынужденная мера: TURN раздаёт медиа в диапазоне портов,
+  # и прокидывать их через docker-NAT и дорого, и ломает определение адресов.
+  # На Linux это работает как надо; на macOS/Windows для локальной проверки
+  # придётся поднимать coturn вне Docker.
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET:?заполните TURN_SECRET в .env}
+      - --realm=${DOMAIN:?заполните DOMAIN в .env}
+      - --listening-port=${TURN_PORT:-3478}
+      - --min-port=${TURN_MIN_PORT:-49160}
+      - --max-port=${TURN_MAX_PORT:-49200}
+      - --no-cli
+      - --no-multicast-peers
+      - --fingerprint
+      # Без этих запретов сервер превращается в прокси во внутреннюю сеть
+      # хостера: любой желающий сможет через него стучаться по приватным адресам.
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=::1
+      - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+volumes:
+  caddy-data:
+  caddy-config:

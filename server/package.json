@@ -1,0 +1,19 @@
+{
+  "name": "p2p-call-signaling",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server/src/index.js",
+    "dev": "tsc --watch --preserveWatchOutput & node --watch dist/server/src/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  }
+}

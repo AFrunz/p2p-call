@@ -1,0 +1,41 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	# Websocket сигналинга. Клиент подключается сюда как wss://<домен>/ws
+	handle /ws* {
+		reverse_proxy signaling:8080
+	}
+
+	handle /health {
+		reverse_proxy signaling:8080
+	}
+
+	# Страница приложения живёт на GitHub Pages, здесь только сигналинг.
+	# Если хочется раздавать фронтенд с этого же сервера — соберите его
+	# (npm run build) и раскомментируйте блок ниже, добавив в docker-compose.yml
+	# монтирование ./dist в /srv контейнера caddy.
+	# handle {
+	# 	root * /srv
+	# 	try_files {path} /index.html
+	# 	file_server
+	# }
+
+	handle {
+		respond "p2p-call signaling" 200
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		# Ссылка-приглашение полезна только целиком, а её секрет лежит во
+		# фрагменте и до сервера не доходит. Пути всё равно не логируем.
+		output stdout
+		format json
+	}
+}

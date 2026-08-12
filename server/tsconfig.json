@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+
+    // Протокол сигналинга общий с фронтендом: проверка входящих сообщений
+    // должна быть ровно одна на обе стороны, поэтому rootDir поднят до корня
+    // репозитория и файл подключается напрямую, без копирования.
+    "rootDir": "..",
+    "outDir": "dist"
+  },
+  "include": ["src", "../src/protocol/signaling.ts"]
+}
