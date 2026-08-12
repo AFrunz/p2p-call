@@ -80,6 +80,7 @@ describe('loadSettings', () => {
       quality: '720p' as const,
       cameraId: 'cam-1',
       microphoneId: 'mic-1',
+      connectDelay: 120,
     }
     saveSettings(store, settings)
 
@@ -152,5 +153,26 @@ describe('язык', () => {
   it('выбрасывает неизвестный язык вместо того, чтобы им пользоваться', () => {
     const store = storage({ 'p2p-call/settings/v1': JSON.stringify({ locale: 'klingon' }) })
     expect(loadSettings(store).locale).toBeNull()
+  })
+})
+
+describe('задержка старта', () => {
+  it('по умолчанию даёт минуту на перенос кода', () => {
+    expect(loadSettings(storage()).connectDelay).toBe(60)
+  })
+
+  it('переживает round-trip', () => {
+    const store = storage()
+    saveSettings(store, { ...DEFAULT_SETTINGS, connectDelay: 300 })
+    expect(loadSettings(store).connectDelay).toBe(300)
+  })
+
+  it('выбрасывает значение не из списка вместо того, чтобы им пользоваться', () => {
+    // Иначе подложенный ноль означал бы мгновенный старт — ровно ту гонку,
+    // от которой задержка и защищает.
+    for (const raw of [0, -5, 7, 'минута', null]) {
+      const store = storage({ 'p2p-call/settings/v1': JSON.stringify({ connectDelay: raw }) })
+      expect(loadSettings(store).connectDelay, String(raw)).toBe(60)
+    }
   })
 })

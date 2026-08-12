@@ -28,6 +28,7 @@ function envelope(patch: Partial<Envelope> = {}): Envelope {
     role: 'initiator',
     publicKey: publicKey(),
     frameEncryption: true,
+    startAt: 0,
     sdp: OFFER_SDP,
     ...patch,
   }
@@ -105,6 +106,15 @@ describe('encodeEnvelope / decodeEnvelope', () => {
     for (const frameEncryption of [true, false]) {
       const decoded = await decodeEnvelope(await encodeEnvelope(envelope({ frameEncryption })))
       expect(decoded.frameEncryption, String(frameEncryption)).toBe(frameEncryption)
+    }
+  })
+
+  it('переносит момент общего старта без потери точности', async () => {
+    // Обе стороны обязаны начать проверку одновременно, поэтому момент едет в
+    // коде, а не считается у каждого свой.
+    for (const startAt of [0, 1_700_000_000_000, Date.now() + 60_000]) {
+      const decoded = await decodeEnvelope(await encodeEnvelope(envelope({ startAt })))
+      expect(decoded.startAt, String(startAt)).toBe(startAt)
     }
   })
 

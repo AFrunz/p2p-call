@@ -89,6 +89,8 @@ export interface SessionView {
   /** Работает ли сквозное шифрование кадров поверх штатного DTLS-SRTP. */
   frameEncryption: boolean
   network: NetworkReport | null
+  /** Когда начнётся проверка пар. null — расписание не назначено. */
+  startAt: number | null
   /** Состояние ICE: видно в строке ожидания и в консольном журнале. */
   iceState: RTCIceConnectionState | null
   stats: CallStats | null
@@ -116,6 +118,8 @@ export interface SessionOptions {
   signalingServer?: string | null
   /** Базовый адрес страницы для сборки ссылки. */
   pageUrl: string
+  /** Через сколько секунд после готовности ответа стороны начнут проверку. */
+  connectDelay?: number
   /**
    * Уже захваченный поток с главного экрана.
    *
@@ -151,6 +155,7 @@ export class CallSession {
     sas: null,
     frameEncryption: false,
     network: null,
+    startAt: null,
     iceState: null,
     stats: null,
     peerMuted: { audio: false, video: false },
@@ -187,6 +192,7 @@ export class CallSession {
   private pendingOffer: string | null = null
   /** Кандидаты собеседника, придержанные до готовности человека. */
   private heldCandidates: string[] = []
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null
   private refreshes = 0
   private restarted = false
   /** Соединение хоть раз состоялось: обрыв после этого — не «не удалось подключиться». */
@@ -342,6 +348,11 @@ export class CallSession {
         // пока человек несёт код на второе устройство.
         const held = this.signaling === null ? stripCandidates(envelope.sdp) : null
         this.heldCandidates = held?.candidates ?? []
+        if (held !== null) {
+          // Момент назначает отвечающий и кладёт его в ответный код: у обеих
+          // сторон он получается общим, а не «у каждого свой отсчёт».
+          this.scheduleRelease(Date.now() + (this.options.connectDelay ?? 60) * 1000)
+        }
 
         await connection.setRemoteDescription({ type: 'offer', sdp: held?.sdp ?? envelope.sdp })
         await connection.setLocalDescription(await connection.createAnswer())
@@ -355,6 +366,7 @@ export class CallSession {
         // эту сторону, пока человек идёт в мессенджер сказать «я вставил».
         const answer = this.signaling === null ? stripCandidates(envelope.sdp) : null
         this.heldCandidates = answer?.candidates ?? []
+        if (answer !== null) this.scheduleRelease(envelope.startAt)
 
         await this.connection.setRemoteDescription({
           type: 'answer',
@@ -612,12 +624,31 @@ export class CallSession {
    * с одной стороны: вторая, даже придерживая своих кандидатов, отвечает на
    * входящие проверки и достраивает пару сама.
    */
+  /**
+   * Назначает общий момент старта.
+   *
+   * Часы устройств расходятся на секунды, а ICE ретранслирует проверки
+   * десятками секунд — такого запаса хватает. Момент из прошлого означает, что
+   * человек нёс код дольше расписания: тогда начинаем сразу.
+   */
+  private scheduleRelease(startAt: number): void {
+    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
+
+    const wait = Math.max(0, startAt - Date.now())
+    this.patch({ startAt })
+    this.releaseTimer = setTimeout(() => void this.startChecking(), wait)
+  }
+
   async startChecking(): Promise<void> {
     const connection = this.connection
     const held = this.heldCandidates
     if (connection === null || held.length === 0) return
 
     this.heldCandidates = []
+    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
+    this.releaseTimer = null
+    this.patch({ startAt: null })
+
     for (const candidate of held) {
       try {
         await connection.addIceCandidate({ candidate, sdpMLineIndex: 0 })
@@ -684,6 +715,7 @@ export class CallSession {
       role,
       publicKey: await exportPublicKey(this.keyPair.publicKey),
       frameEncryption: detectTransformSupport() !== 'none',
+      startAt: this.view.startAt ?? 0,
       sdp,
     })
 
@@ -948,6 +980,8 @@ export class CallSession {
 
   private teardown(): void {
     this.stopWatchdog()
+    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
+    this.releaseTimer = null
     if (this.statsTimer !== null) clearInterval(this.statsTimer)
     if (this.ratchetTimer !== null) clearInterval(this.ratchetTimer)
     this.statsTimer = null

@@ -15,7 +15,14 @@ import { probeSignaling, reachabilityKey } from './net/reachability.js'
 import type { NetworkReport } from './net/probe.js'
 import { buildIceServers } from './net/turn.js'
 import { parseInviteLink } from './signaling/link.js'
-import { loadSettings, qualityOptions, saveSettings, validateServerUrl } from './settings.js'
+import {
+  CONNECT_DELAYS,
+  isConnectDelay,
+  loadSettings,
+  qualityOptions,
+  saveSettings,
+  validateServerUrl,
+} from './settings.js'
 import type { Settings } from './settings.js'
 import {
   attachStream,
@@ -51,6 +58,7 @@ let callSeconds = 0
 /** Фразу сверили — больше не навязываемся. */
 let sasConfirmed = false
 let toggleIcons = { audio: false, video: false }
+let countdownHandle: ReturnType<typeof setInterval> | null = null
 let timerHandle: ReturnType<typeof setInterval> | null = null
 let toastHandle: ReturnType<typeof setTimeout> | null = null
 
@@ -85,6 +93,7 @@ function setLocale(next: Locale): void {
 
   applyTranslations()
   fillQuality()
+  fillDelay()
   renderLangs()
   renderChecks()
   renderServerPanel()
@@ -415,6 +424,7 @@ function newSession(): CallSession {
     microphoneId: settings.microphoneId,
     signalingServer: settings.signalingServer,
     pageUrl: `${location.origin}${location.pathname}`,
+    connectDelay: settings.connectDelay,
     network,
     // Камера уже захвачена на главном экране вместе с состоянием тумблеров —
     // просить её второй раз значит заставить человека ждать на ровном месте.
@@ -452,11 +462,11 @@ function render(view: SessionView): void {
   // копирует код уже уничтоженной сессии и удивляется, почему не соединяется.
   el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode ?? ''
   show('outgoing-block', view.outgoingCode !== null)
-  // Кнопка нужна обеим сторонам: пока кандидаты придержаны, проверка не
-  // начиналась и торопиться некуда.
+  // Отсчёт нужен обеим сторонам: момент общий, и видеть его должны оба.
   const holding = session?.isHoldingCandidates ?? false
   show('answer-sent', holding)
   show('answer-refresh', !holding && view.role === 'responder' && view.outgoingCode !== null)
+  renderCountdown(view.startAt)
 
   if (view.outgoingCode !== null) {
     // Длина рядом с кодом — чтобы обе стороны могли сверить её глазами:
@@ -661,6 +671,29 @@ function clock(seconds: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
+/** Обратный отсчёт до общего старта проверки. */
+function renderCountdown(startAt: number | null): void {
+  if (countdownHandle !== null) clearInterval(countdownHandle)
+  countdownHandle = null
+
+  if (startAt === null) return
+
+  const tick = () => {
+    const left = Math.max(0, Math.round((startAt - Date.now()) / 1000))
+    setText(
+      'countdown-hint',
+      left === 0 ? t('exchange.countdownNow') : t('exchange.countdown', { value: clock(left) }),
+    )
+    if (left === 0 && countdownHandle !== null) {
+      clearInterval(countdownHandle)
+      countdownHandle = null
+    }
+  }
+
+  tick()
+  countdownHandle = setInterval(tick, 1000)
+}
+
 function startTimer(): void {
   callStartedAt = Date.now()
 
@@ -681,6 +714,17 @@ function stopTimer(): void {
 
 // ---------------------------------------------------------------- настройки
 
+function fillDelay(): void {
+  fillSelect(
+    'setting-delay',
+    CONNECT_DELAYS.map((value) => ({
+      value: String(value),
+      label: t('settings.delaySeconds', { value }),
+    })),
+    String(settings.connectDelay),
+  )
+}
+
 function fillQuality(): void {
   fillSelect(
     'quality-select',
@@ -692,6 +736,7 @@ function fillQuality(): void {
 function openSettings(): void {
   el<HTMLInputElement>('setting-server').value = settings.signalingServer ?? ''
   show('server-error', false)
+  fillDelay()
   renderLangs()
   show('screen-settings', true)
 }
@@ -712,7 +757,13 @@ function saveSettingsForm(): boolean {
   }
 
   show(error, false)
-  settings = { ...settings, signalingServer, locale }
+  const delay = Number(el<HTMLSelectElement>('setting-delay').value)
+  settings = {
+    ...settings,
+    signalingServer,
+    locale,
+    connectDelay: isConnectDelay(delay) ? delay : settings.connectDelay,
+  }
   saveSettings(localStorage, settings)
   renderServerPanel()
   return true
@@ -863,8 +914,6 @@ function wire(): void {
   on('action-answer-sent', 'click', () => {
     void withBusy('action-answer-sent', 'exchange.connecting', async () => {
       await session?.startChecking()
-      show('answer-sent', false)
-      show('answer-refresh', true)
     })
   })
 

@@ -5,13 +5,13 @@ import type { Envelope, Role } from './types.js'
 export const MAGIC = 0x5032 // "P2"
 
 /** Версия формата кода. Несовпадение — повод честно сказать «обнови вкладку». */
-export const FORMAT_VERSION = 2
+export const FORMAT_VERSION = 3
 
 /** Размер сырого публичного ключа ECDH P-256. */
 export const PUBLIC_KEY_BYTES = 65
 
-/** magic(2) + version(1) + role(1) + возможности(1) + pubkey(65) + длина SDP(4). */
-const HEADER_BYTES = 2 + 1 + 1 + 1 + PUBLIC_KEY_BYTES + 4
+/** magic(2) + version(1) + role(1) + возможности(1) + старт(8) + pubkey(65) + длина SDP(4). */
+const HEADER_BYTES = 2 + 1 + 1 + 1 + 8 + PUBLIC_KEY_BYTES + 4
 
 /** Бит возможностей: сторона умеет шифровать кадры. */
 const FLAG_FRAME_ENCRYPTION = 1
@@ -83,8 +83,10 @@ export async function encodeEnvelope(envelope: Envelope): Promise<string> {
   view.setUint8(2, envelope.version)
   view.setUint8(3, ROLE_CODES[envelope.role])
   view.setUint8(4, envelope.frameEncryption ? FLAG_FRAME_ENCRYPTION : 0)
-  raw.set(envelope.publicKey, 5)
-  view.setUint32(5 + PUBLIC_KEY_BYTES, sdp.length)
+  // float64 держит unix-время без потерь и не упрётся в 2038 год.
+  view.setFloat64(5, envelope.startAt)
+  raw.set(envelope.publicKey, 13)
+  view.setUint32(13 + PUBLIC_KEY_BYTES, sdp.length)
   raw.set(sdp, HEADER_BYTES)
 
   return toBase32(await deflate(raw))
@@ -127,8 +129,9 @@ export async function decodeEnvelope(code: string): Promise<Envelope> {
   }
 
   const flags = view.getUint8(4)
-  const publicKey = raw.slice(5, 5 + PUBLIC_KEY_BYTES)
-  const sdpLength = view.getUint32(5 + PUBLIC_KEY_BYTES)
+  const startAt = view.getFloat64(5)
+  const publicKey = raw.slice(13, 13 + PUBLIC_KEY_BYTES)
+  const sdpLength = view.getUint32(13 + PUBLIC_KEY_BYTES)
   if (raw.length !== HEADER_BYTES + sdpLength) {
     throw new CodeFormatError('код обрезан: SDP не совпал с заявленной длиной', 'truncated')
   }
@@ -139,6 +142,7 @@ export async function decodeEnvelope(code: string): Promise<Envelope> {
     role,
     publicKey,
     frameEncryption: (flags & FLAG_FRAME_ENCRYPTION) !== 0,
+    startAt: Number.isFinite(startAt) ? startAt : 0,
     sdp,
   }
 }
