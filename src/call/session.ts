@@ -42,7 +42,7 @@ import type { QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
 import { StatsCollector, createConnection, waitForGathering } from './peer.js'
 import type { CallStats } from './peer.js'
-import { attachAll, detectTransformSupport } from './transform.js'
+import { attachAll, attachTransform, detectTransformSupport, negotiatedCodec } from './transform.js'
 
 /**
  * Сколько ждём соединения после начала проверки пар.
@@ -876,9 +876,10 @@ export class CallSession {
     })
 
     const attached = attachAll(worker, this.connection, this.keys)
+    const silent = this.connection.getSenders().filter((sender) => sender.track === null).length
     console.debug(
-      `[p2p] трансформ навешен: ${attached}, отправителей ${this.connection.getSenders().length},` +
-        ` получателей ${this.connection.getReceivers().length}`,
+      `[p2p] трансформ навешен: ${attached}, отправителей ${this.connection.getSenders().length}` +
+        ` (без дорожки ${silent}), получателей ${this.connection.getReceivers().length}`,
     )
     return attached
   }
@@ -1025,7 +1026,22 @@ export class CallSession {
       ?.getTransceivers()
       .find((item) => item.receiver.track.kind === track.kind)?.sender
 
-    if (sender !== undefined) await sender.replaceTrack(track)
+    if (sender !== undefined) {
+      await sender.replaceTrack(track)
+
+      // Шифрование навешивается на отправителей при выводе ключей, а тогда у
+      // этого дорожки ещё не было — и она ушла бы открытым текстом прямо в
+      // расшифровщик собеседника.
+      const kind = track.kind === 'audio' ? 'audio' : 'video'
+      if (this.worker !== null && this.keys !== null && this.view.frameEncryption) {
+        attachTransform(this.worker, sender, {
+          kind,
+          direction: 'send',
+          codec: negotiatedCodec(sender, kind),
+          keys: this.keys[kind].send,
+        })
+      }
+    }
     this.localStream?.addTrack(track)
 
     const kind = track.kind === 'audio' ? 'audio' : 'video'
