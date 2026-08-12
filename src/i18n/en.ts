@@ -242,4 +242,5 @@ export const en: Record<string, string> = {
   'error.needServer': 'This connection will not go through without a relay server. It is enough for one of you to have one.',
   'error.dismiss': 'Got it',
   'exchange.answerCode': 'Your reply code — send it back',
+  'status.sendAnswer': 'The reply code is ready — send it back and wait until the other side pastes it.',
 }

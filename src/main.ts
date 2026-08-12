@@ -450,8 +450,18 @@ function onPhase(view: SessionView): void {
     'exchange-status-text',
     view.phase === 'connecting' ? 'status.connecting' : view.phase === 'awaiting-exchange' ? 'status.waitingCode' : null,
   )
-  if (view.phase === 'connecting' && view.iceState !== null) {
-    setText('exchange-status-text', `${t('status.connecting')} (${view.iceState})`)
+  if (view.phase === 'connecting') {
+    // Отвечающий ждёт не сеть, а человека: пока код не вставили на той
+    // стороне, ICE даже не начинал проверять пары.
+    const waitingForPeer =
+      view.role === 'responder' && (view.iceState === null || view.iceState === 'new')
+
+    setText(
+      'exchange-status-text',
+      waitingForPeer
+        ? t('status.sendAnswer')
+        : `${t('status.connecting')}${view.iceState === null ? '' : ` (${view.iceState})`}`,
+    )
   }
   if (view.phase === 'connecting' && inviteLink.length > 0) {
     setText('link-status-text', t('link.peerJoined'))

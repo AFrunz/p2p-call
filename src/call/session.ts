@@ -30,8 +30,13 @@ import { StatsCollector, createConnection, waitForGathering } from './peer.js'
 import type { CallStats } from './peer.js'
 import { attachAll, detectTransformSupport } from './transform.js'
 
-/** Сколько ждём установки соединения, прежде чем признать провал. */
-const CONNECT_TIMEOUT_MS = 25_000
+/**
+ * Сколько ждём соединения с момента, когда ICE начал проверять пары.
+ *
+ * Отсчитывать раньше нельзя: в режиме кодов между генерацией ответа и его
+ * применением на той стороне стоит человек с буфером обмена.
+ */
+const CONNECT_TIMEOUT_MS = 30_000
 
 export type Phase =
   | 'idle'
@@ -250,12 +255,10 @@ export class CallSession {
         await waitForGathering(connection)
 
         this.patch({ phase: 'connecting', outgoingCode: await this.buildCode('responder') })
-        this.startWatchdog()
       } else {
         if (envelope.role !== 'responder') throw new SessionError('session.wrongCodeRole')
         await this.connection.setRemoteDescription({ type: 'answer', sdp: envelope.sdp })
         this.patch({ phase: 'connecting' })
-        this.startWatchdog()
       }
 
       await this.establishKeys()
@@ -360,7 +363,6 @@ export class CallSession {
       }
 
       this.patch({ phase: 'connecting' })
-      this.startWatchdog()
       await this.establishKeys()
     } catch (error) {
       this.fail(describe(error))
@@ -406,6 +408,14 @@ export class CallSession {
       connection.addEventListener(event, () => {
         this.trace(event)
         this.patch({ iceState: connection.iceConnectionState })
+
+        // Отсчёт начинаем с момента, когда пары действительно проверяются.
+        // Раньше он стартовал сразу после генерации ответного кода — и тикал,
+        // пока человек переносил этот код в другую вкладку.
+        if (connection.iceConnectionState === 'checking') this.startWatchdog()
+        if (connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') {
+          this.stopWatchdog()
+        }
       })
     }
 
