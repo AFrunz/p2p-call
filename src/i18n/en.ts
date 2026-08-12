@@ -261,6 +261,6 @@ export const en: Record<string, string> = {
   'exchange.answerWindow': 'If you missed the window, refresh the code and send the new one.',
   'exchange.refresh': 'Refresh the code',
   'exchange.refreshed': 'Code refreshed — send this one.',
-  'exchange.sentHint': 'There is no time limit: connecting starts only when you press the button. Paste the code on the other device first.',
-  'exchange.sent': 'I pasted it on the other device',
+  'exchange.sentHint': 'The clock does not run until you press. Press once both sides have pasted their codes — one of you is enough.',
+  'exchange.sent': 'Both codes are in — connect',
 }

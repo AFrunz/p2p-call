@@ -452,11 +452,11 @@ function render(view: SessionView): void {
   // копирует код уже уничтоженной сессии и удивляется, почему не соединяется.
   el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode ?? ''
   show('outgoing-block', view.outgoingCode !== null)
-  // Кнопки под ответным кодом: пока кандидаты придержаны, подключение ещё не
-  // начиналось и торопиться некуда.
-  const answering = view.role === 'responder' && view.outgoingCode !== null
-  show('answer-sent', answering && (session?.isHoldingCandidates ?? false))
-  show('answer-refresh', answering && !(session?.isHoldingCandidates ?? false))
+  // Кнопка нужна обеим сторонам: пока кандидаты придержаны, проверка не
+  // начиналась и торопиться некуда.
+  const holding = session?.isHoldingCandidates ?? false
+  show('answer-sent', holding)
+  show('answer-refresh', !holding && view.role === 'responder' && view.outgoingCode !== null)
 
   if (view.outgoingCode !== null) {
     // Длина рядом с кодом — чтобы обе стороны могли сверить её глазами:

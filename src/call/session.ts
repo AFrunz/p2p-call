@@ -347,7 +347,16 @@ export class CallSession {
         this.patch({ phase: 'connecting', outgoingCode: await this.buildCode('responder') })
       } else {
         if (envelope.role !== 'responder') throw new SessionError('session.wrongCodeRole')
-        await this.connection.setRemoteDescription({ type: 'answer', sdp: envelope.sdp })
+
+        // Придерживаем и здесь: иначе ожидание в пустоту просто переезжает на
+        // эту сторону, пока человек идёт в мессенджер сказать «я вставил».
+        const answer = this.signaling === null ? stripCandidates(envelope.sdp) : null
+        this.heldCandidates = answer?.candidates ?? []
+
+        await this.connection.setRemoteDescription({
+          type: 'answer',
+          sdp: answer?.sdp ?? envelope.sdp,
+        })
         this.patch({ phase: 'connecting' })
       }
 
@@ -595,8 +604,9 @@ export class CallSession {
   /**
    * Отдаёт придержанных кандидатов и запускает проверку пар.
    *
-   * Нажимается человеком, когда код уже вставлен на втором устройстве, — то
-   * есть ровно тогда, когда собеседник готов отвечать на проверки.
+   * Нажимается человеком, когда обе стороны вставили коды. Достаточно нажатия
+   * с одной стороны: вторая, даже придерживая своих кандидатов, отвечает на
+   * входящие проверки и достраивает пару сама.
    */
   async startChecking(): Promise<void> {
     const connection = this.connection
