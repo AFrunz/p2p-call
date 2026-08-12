@@ -3,6 +3,8 @@ import {
   encodeClientMessage,
 } from '../protocol/signaling.js'
 import type { IceServerConfig, ServerMessage } from '../protocol/signaling.js'
+import { message } from '../i18n/message.js'
+import type { Message } from '../i18n/message.js'
 import { deriveSignalingKey, open, seal } from './sealed.js'
 import type { Invite } from './link.js'
 import type { Role } from './types.js'
@@ -14,7 +16,7 @@ export interface SignalingEvents {
   onPeerLeft(): void
   /** Расшифрованное содержимое: сервер его никогда не видел. */
   onSignal(payload: string): void
-  onError(message: string): void
+  onError(reason: Message): void
   onClosed(): void
 }
 
@@ -50,7 +52,7 @@ export class SignalingClient {
     })
 
     socket.addEventListener('error', () => {
-      this.events.onError('Не удалось связаться с сигнальным сервером.')
+      this.events.onError(message('signaling.unreachable'))
     })
 
     socket.addEventListener('close', () => {
@@ -75,12 +77,12 @@ export class SignalingClient {
 
   private async handle(raw: string): Promise<void> {
     // Сервер тоже недоверенный: его могли подменить, поэтому разбираем строго.
-    const message: ServerMessage | null = decodeServerMessage(raw)
-    if (message === null) return
+    const parsed: ServerMessage | null = decodeServerMessage(raw)
+    if (parsed === null) return
 
-    switch (message.t) {
+    switch (parsed.t) {
       case 'joined':
-        return this.events.onJoined(message.role, message.iceServers)
+        return this.events.onJoined(parsed.role, parsed.iceServers)
 
       case 'peer-joined':
         return this.events.onPeerJoined()
@@ -91,32 +93,30 @@ export class SignalingClient {
       case 'signal': {
         if (this.key === null) return
         try {
-          this.events.onSignal(await open(this.key, message.payload))
+          this.events.onSignal(await open(this.key, parsed.payload))
         } catch {
           // Блоб не расшифровался: либо у собеседника другая ссылка, либо
           // кто-то по дороге пытался вмешаться. Молча игнорировать нельзя.
-          this.events.onError(
-            'Сообщение собеседника не прошло проверку подлинности. Убедитесь, что вы открыли одну и ту же ссылку.',
-          )
+          this.events.onError(message('signaling.tampered'))
         }
         return
       }
 
       case 'error':
-        return this.events.onError(describe(message.code, message.message))
+        return this.events.onError(describe(parsed.code))
     }
   }
 }
 
-function describe(code: string, fallback: string): string {
+function describe(code: string): Message {
   switch (code) {
     case 'room-full':
-      return 'В этой комнате уже двое. Создайте новую ссылку.'
+      return message('signaling.roomFull')
     case 'rate-limited':
-      return 'Сервер ограничил частоту сообщений и закрыл соединение.'
+      return message('signaling.rateLimited')
     case 'server-error':
-      return 'Сервер перегружен: слишком много активных комнат.'
+      return message('signaling.serverError')
     default:
-      return fallback
+      return message('signaling.unreachable')
   }
 }

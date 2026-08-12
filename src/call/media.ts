@@ -1,9 +1,21 @@
+import { message } from '../i18n/message.js'
+import type { Message } from '../i18n/message.js'
 import { presetToConstraints, presetToEncodings } from '../media/quality.js'
 import type { QualityPreset } from '../media/quality.js'
 
 export interface DeviceOption {
   deviceId: string
-  label: string
+  /**
+   * Название устройства.
+   *
+   * Строка — это имя от браузера, его переводить нечего и незачем. Message —
+   * подпись для безымянного устройства (браузер молчит, пока не выдано
+   * разрешение): её собирает интерфейс на своём языке. Отдавать всё Message
+   * не выйдет — под живое имя пришлось бы заводить ключ в словаре, а отдавать
+   * всё строкой значит снова зашить сюда язык. Разбор у потребителя простой:
+   * `typeof label === 'string' ? label : translate(label.key, label.params)`.
+   */
+  label: string | Message
 }
 
 export interface DeviceList {
@@ -22,12 +34,26 @@ export type MediaFailure =
   | 'overconstrained'
   | 'unknown'
 
+/**
+ * Почему устройства не достались.
+ *
+ * Остаётся наследником Error: ошибка всплывает в логах и в стеках, и терять
+ * это из-за локализации незачем. Но текст для человека несёт ключом — модуль
+ * ядра не знает языка интерфейса. В `super` уходит ключ: для отладки это
+ * осмысленная строка, а показывать её пользователю никто и не собирается.
+ */
 export class MediaError extends Error {
   constructor(
-    message: string,
+    readonly text: Message,
     readonly kind: MediaFailure,
+    /**
+     * Уточнение к основному тексту, если оно есть. Отдельным сообщением, а не
+     * припиской к `text`: склеивать переводы в ядре нельзя — порядок и пробелы
+     * между фразами решает язык, а не мы.
+     */
+    readonly details: Message | null = null,
   ) {
-    super(message)
+    super(text.key)
     this.name = 'MediaError'
   }
 }
@@ -88,13 +114,7 @@ export async function requestMedia(
   provider: MediaProvider = browserProvider(),
 ): Promise<MediaResult> {
   if (!provider.isSecureContext) {
-    return viewerOnly(
-      provider,
-      new MediaError(
-        'Браузер выдаёт камеру только на HTTPS или localhost. Сейчас вы сможете только смотреть и слушать.',
-        'insecure',
-      ),
-    )
+    return viewerOnly(provider, new MediaError(message('media.insecure'), 'insecure'))
   }
 
   const video = videoConstraints(request)
@@ -203,10 +223,11 @@ function isFatal(error: unknown): boolean {
 }
 
 /**
- * Добавляет к сообщению перепись устройств.
+ * Добавляет к объяснению перепись устройств.
  *
  * «Камер не найдено, микрофонов 1» снимает почти все вопросы: сразу видно, дело
- * в железе или в разрешениях.
+ * в железе или в разрешениях. Перепись едет в `details` отдельным сообщением —
+ * интерфейс покажет её следом за основным текстом.
  */
 async function translateAsync(error: unknown, provider: MediaProvider): Promise<MediaError> {
   const base = translate(error, provider)
@@ -216,7 +237,11 @@ async function translateAsync(error: unknown, provider: MediaProvider): Promise<
     const cameras = devices.filter((device) => device.kind === 'videoinput').length
     const microphones = devices.filter((device) => device.kind === 'audioinput').length
 
-    return new MediaError(`${base.message} Браузер видит камер: ${cameras}, микрофонов: ${microphones}.`, base.kind)
+    return new MediaError(
+      base.text,
+      base.kind,
+      message('media.deviceCount', { cameras, microphones }),
+    )
   } catch {
     return base
   }
@@ -228,35 +253,22 @@ function translate(error: unknown, provider: MediaProvider): MediaError {
   switch (name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return new MediaError(
-        'Браузер не пустил к камере и микрофону. Проверьте разрешение в адресной строке, ' +
-          'а на macOS ещё и доступ браузера к камере в настройках системы.',
-        'denied',
-      )
+      return new MediaError(message('media.denied'), 'denied')
 
     case 'NotFoundError':
-      return new MediaError(
-        'Ни камеры, ни микрофона не нашлось. Проверьте, что устройство подключено и не отключено в системе.',
-        'absent',
-      )
+      return new MediaError(message('media.absent'), 'absent')
 
     case 'OverconstrainedError':
-      return new MediaError(
-        'Выбранное устройство больше недоступно. Откройте настройки и выберите камеру и микрофон заново.',
-        'overconstrained',
-      )
+      return new MediaError(message('media.overconstrained'), 'overconstrained')
 
     case 'NotReadableError':
     case 'AbortError':
-      return new MediaError(
-        'Камера или микрофон заняты другой программой. Закройте её — на Windows это чаще всего Zoom или Teams — и попробуйте снова.',
-        'busy',
-      )
+      return new MediaError(message('media.busy'), 'busy')
 
     default:
       return provider.enumerateDevices === undefined
-        ? new MediaError('Этот браузер не умеет отдавать камеру и микрофон.', 'unsupported')
-        : new MediaError('Не удалось получить камеру и микрофон.', 'unknown')
+        ? new MediaError(message('media.unsupported'), 'unsupported')
+        : new MediaError(message('media.unknown'), 'unknown')
   }
 }
 
@@ -272,30 +284,30 @@ export async function listDevices(provider: MediaProvider = browserProvider()): 
     return { cameras: [], microphones: [] }
   }
 
-  const pick = (kind: MediaDeviceKind, fallback: string): DeviceOption[] =>
+  // Нумерация идёт внутри своего вида: «Камера 2» должна быть второй камерой,
+  // а не вторым устройством вообще.
+  const pick = (kind: MediaDeviceKind, fallbackKey: string): DeviceOption[] =>
     devices
       .filter((device) => device.kind === kind)
       .map((device, index) => ({
         deviceId: device.deviceId,
-        label: device.label.length > 0 ? device.label : `${fallback} ${index + 1}`,
+        label: device.label.length > 0 ? device.label : message(fallbackKey, { index: index + 1 }),
       }))
 
   return {
-    cameras: pick('videoinput', 'Камера'),
-    microphones: pick('audioinput', 'Микрофон'),
+    cameras: pick('videoinput', 'devices.cameraFallback'),
+    microphones: pick('audioinput', 'devices.microphoneFallback'),
   }
 }
 
 /** Что показать пользователю, если часть устройств не досталась. */
-export function describeMissing(missing: MediaKind[]): string | null {
+export function describeMissing(missing: MediaKind[]): Message | null {
   if (missing.length === 0) return null
   if (missing.includes('video') && missing.includes('audio')) {
-    return 'Ни камеры, ни микрофона нет — вы подключитесь только на просмотр.'
+    return message('media.missing.both')
   }
 
-  return missing[0] === 'video'
-    ? 'Камера недоступна — собеседник будет только слышать вас.'
-    : 'Микрофон недоступен — собеседник будет только видеть вас.'
+  return missing[0] === 'video' ? message('media.missing.video') : message('media.missing.audio')
 }
 
 /** Применяет пресет качества на лету — ренеготиация не требуется. */

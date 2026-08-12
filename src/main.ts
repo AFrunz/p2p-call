@@ -2,9 +2,11 @@ import QRCode from 'qrcode'
 import { CallSession } from './call/session.js'
 import type { SessionView } from './call/session.js'
 import { describeMissing, listDevices, requestMedia, stopStream } from './call/media.js'
+import type { DeviceOption } from './call/media.js'
 import { detectTransformSupport } from './call/transform.js'
 import { LOCALES, createTranslator, detectLocale, localeName } from './i18n/index.js'
 import type { Locale } from './i18n/index.js'
+import type { Message } from './i18n/message.js'
 import { isQualityPreset } from './media/quality.js'
 import { buildChecks } from './net/checks.js'
 import type { NetworkCheck } from './net/checks.js'
@@ -62,6 +64,11 @@ function applyTranslations(): void {
 
   document.documentElement.lang = locale
   document.title = t('home.title')
+}
+
+/** Переводит сообщение, пришедшее из модуля ядра. */
+function tm(msg: Message): string {
+  return t(msg.key, msg.params)
 }
 
 function setLocale(next: Locale): void {
@@ -152,8 +159,13 @@ async function startPreview(): Promise<void> {
     toast(t('toast.savedDeviceGone'))
   }
 
-  const problem = media.problem?.message ?? describeMissing(media.missing)
-  if (problem !== null) setText('preview-hint', problem)
+  // К причине добавляем перепись устройств: «камер: 0, микрофонов: 1» сразу
+  // отделяет отсутствие железа от невыданного разрешения.
+  const explanation = [media.problem?.text ?? describeMissing(media.missing), media.problem?.details]
+    .filter((part): part is Message => part != null)
+    .map(tm)
+
+  if (explanation.length > 0) setText('preview-hint', explanation.join(' '))
 
   await fillDevices()
   syncAvailability()
@@ -195,14 +207,17 @@ async function fillDevices(): Promise<void> {
   const devices = await listDevices()
   const auto = { value: '', label: t('devices.default') }
 
-  fillSelect(
-    'select-camera',
-    [auto, ...devices.cameras.map((item) => ({ value: item.deviceId, label: item.label }))],
-    settings.cameraId ?? '',
-  )
+  // Живое имя от браузера переводить нечего, а безымянному устройству модуль
+  // отдаёт ключ с номером — отсюда разбор по типу.
+  const option = (item: DeviceOption) => ({
+    value: item.deviceId,
+    label: typeof item.label === 'string' ? item.label : tm(item.label),
+  })
+
+  fillSelect('select-camera', [auto, ...devices.cameras.map(option)], settings.cameraId ?? '')
   fillSelect(
     'select-microphone',
-    [auto, ...devices.microphones.map((item) => ({ value: item.deviceId, label: item.label }))],
+    [auto, ...devices.microphones.map(option)],
     settings.microphoneId ?? '',
   )
 }
@@ -328,11 +343,13 @@ function newSession(): CallSession {
 }
 
 function render(view: SessionView): void {
-  if (view.notice !== null && view.notice !== lastNotice) {
-    lastNotice = view.notice
-    toast(view.notice)
+  // Сравниваем по ключу: объект каждый раз новый, а повторять один и тот же
+  // тост при каждой перерисовке незачем.
+  if (view.notice !== null && view.notice.key !== lastNotice) {
+    lastNotice = view.notice.key
+    toast(tm(view.notice))
   }
-  if (view.phase === 'failed' && view.error !== null) toast(view.error)
+  if (view.phase === 'failed' && view.error !== null) toast(tm(view.error))
 
   if (view.outgoingCode !== null) {
     el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode
@@ -376,7 +393,7 @@ function onPhase(view: SessionView): void {
 }
 
 function renderCall(view: SessionView): void {
-  setBadge('badge-connection', describeConnection(view.stats?.kind ?? null))
+  setBadge('badge-connection', tm(describeConnection(view.stats?.kind ?? null)))
 
   const encryption = el('badge-encryption')
   encryption.classList.toggle('badge--ok', view.frameEncryption)
@@ -409,9 +426,9 @@ function renderStats(view: SessionView): void {
   if (stats === null) return
 
   const cells: [string, string][] = [
-    ['stats.outbound', formatBitrate(stats.outboundBitrate)],
-    ['stats.inbound', formatBitrate(stats.inboundBitrate)],
-    ['stats.latency', formatRoundTrip(stats.roundTripMs)],
+    ['stats.outbound', tm(formatBitrate(stats.outboundBitrate))],
+    ['stats.inbound', tm(formatBitrate(stats.inboundBitrate))],
+    ['stats.latency', tm(formatRoundTrip(stats.roundTripMs))],
     ['stats.loss', formatLoss(stats.packetLoss)],
   ]
 
@@ -472,7 +489,7 @@ function saveSettingsForm(): boolean {
   if (raw.length > 0) {
     const check = validateServerUrl(raw)
     if (!check.ok) {
-      setText(error, check.error)
+      setText(error, tm(check.error))
       show(error, true)
       return false
     }
@@ -498,7 +515,7 @@ function wire(): void {
   })
   on('action-check-server', 'click', () => {
     const check = validateServerUrl(el<HTMLInputElement>('setting-server').value)
-    toast(check.ok ? t('settings.checkOk') : check.error)
+    toast(check.ok ? t('settings.checkOk') : tm(check.error))
   })
   on('action-remove-server', 'click', () => {
     el<HTMLInputElement>('setting-server').value = ''

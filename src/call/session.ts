@@ -1,4 +1,6 @@
 import type { Bytes } from '../bytes.js'
+import { message } from '../i18n/message.js'
+import type { Message } from '../i18n/message.js'
 import { RATCHET_INTERVAL_MS } from '../crypto/kdf.js'
 import {
   deriveMediaKeys,
@@ -59,8 +61,8 @@ export interface SessionView {
   /** Есть ли что передавать: без камеры или микрофона кнопки бессмысленны. */
   canSend: { audio: boolean; video: boolean }
   /** Предупреждение, не мешающее звонку, — в отличие от error. */
-  notice: string | null
-  error: string | null
+  notice: Message | null
+  error: Message | null
 }
 
 export interface SessionOptions {
@@ -159,12 +161,12 @@ export class CallSession {
           audio: media.stream.getAudioTracks().length > 0,
           video: media.stream.getVideoTracks().length > 0,
         },
-        notice: media.problem?.message ?? describeMissing(media.missing),
+        notice: media.problem?.text ?? describeMissing(media.missing),
       })
 
       this.patch({ phase: 'idle', network: this.options.network ?? null })
-    } catch (error) {
-      this.fail(error instanceof Error ? error.message : 'Не удалось подготовить звонок.')
+    } catch {
+      this.fail(message('session.prepareFailed'))
     }
   }
 
@@ -210,9 +212,7 @@ export class CallSession {
 
         this.patch({ phase: 'connecting', outgoingCode: await this.buildCode('responder') })
       } else {
-        if (envelope.role !== 'responder') {
-          throw new Error('Это код создателя звонка, а нужен ответный код собеседника.')
-        }
+        if (envelope.role !== 'responder') throw new SessionError('session.wrongCodeRole')
         await this.connection.setRemoteDescription({ type: 'answer', sdp: envelope.sdp })
         this.patch({ phase: 'connecting' })
       }
@@ -220,9 +220,7 @@ export class CallSession {
       await this.establishKeys()
     } catch (error) {
       this.fail(
-        error instanceof CodeFormatError
-          ? 'Код не распознан. Проверьте, что скопировали его целиком.'
-          : describe(error),
+        error instanceof CodeFormatError ? message('session.codeUnreadable') : describe(error),
       )
     }
   }
@@ -232,9 +230,7 @@ export class CallSession {
   /** Создаёт комнату на своём сервере и возвращает ссылку-приглашение. */
   async createLink(): Promise<void> {
     const server = this.options.signalingServer
-    if (server === null || server === undefined) {
-      return this.fail('Сначала укажите адрес своего сигнального сервера в настройках.')
-    }
+    if (server === null || server === undefined) return this.fail(message('session.noServer'))
 
     try {
       this.invite = generateInvite(server)
@@ -251,7 +247,7 @@ export class CallSession {
   /** Подключается по чужой ссылке. */
   async joinLink(url: string): Promise<void> {
     const invite = parseInviteLink(url)
-    if (invite === null) return this.fail('Ссылка-приглашение не распознана.')
+    if (invite === null) return this.fail(message('session.badLink'))
 
     try {
       this.invite = invite
@@ -270,14 +266,14 @@ export class CallSession {
       onPeerJoined: () => {
         void this.onPeerJoined()
       },
-      onPeerLeft: () => this.patch({ error: 'Собеседник отключился.' }),
+      onPeerLeft: () => this.patch({ error: message('session.peerLeft') }),
       onSignal: (payload) => {
         void this.onSignal(payload)
       },
-      onError: (message) => this.patch({ error: message }),
+      onError: (reason) => this.patch({ error: reason }),
       onClosed: () => {
         if (this.view.phase !== 'connected') {
-          this.patch({ error: 'Соединение с сигнальным сервером разорвано.' })
+          this.patch({ error: message('session.signalingClosed') })
         }
       },
     })
@@ -391,9 +387,7 @@ export class CallSession {
   /** Собирает конверт с нашим SDP и публичным ключом. */
   private async buildCode(role: Role): Promise<string> {
     const description = this.connection?.localDescription
-    if (description == null || this.keyPair === null) {
-      throw new Error('Соединение ещё не готово.')
-    }
+    if (description == null || this.keyPair === null) throw new SessionError('session.notReady')
 
     return encodeEnvelope({
       version: 1,
@@ -420,7 +414,7 @@ export class CallSession {
     const remoteFingerprint = extractFingerprint(remoteSdp)
 
     if (localFingerprint === null || remoteFingerprint === null) {
-      return this.fail('В SDP нет отпечатка SHA-256: продолжать небезопасно.')
+      return this.fail(message('session.noFingerprint'))
     }
 
     const salt = concat(localFingerprint, remoteFingerprint)
@@ -473,18 +467,18 @@ export class CallSession {
     })
 
     channel.addEventListener('message', (event) => {
-      const message = decodeMessage(String(event.data))
-      if (message === null) return
+      const control = decodeMessage(String(event.data))
+      if (control === null) return
 
-      if (message.t === 'mute') {
-        this.patch({ peerMuted: { ...this.view.peerMuted, [message.kind]: message.muted } })
+      if (control.t === 'mute') {
+        this.patch({ peerMuted: { ...this.view.peerMuted, [control.kind]: control.muted } })
       }
-      if (message.t === 'bye') this.patch({ error: 'Собеседник завершил звонок.' })
+      if (control.t === 'bye') this.patch({ error: message('session.peerHungUp') })
     })
   }
 
-  private sendControl(message: ControlMessage): void {
-    if (this.channel?.readyState === 'open') this.channel.send(encodeMessage(message))
+  private sendControl(control: ControlMessage): void {
+    if (this.channel?.readyState === 'open') this.channel.send(encodeMessage(control))
   }
 
   // --- управление во время звонка -----------------------------------------
@@ -536,9 +530,9 @@ export class CallSession {
     this.localStream = null
   }
 
-  private fail(message: string): void {
+  private fail(reason: Message): void {
     this.teardown()
-    this.patch({ phase: 'failed', error: message })
+    this.patch({ phase: 'failed', error: reason })
   }
 
   private patch(changes: Partial<SessionView>): void {
@@ -554,22 +548,26 @@ function concat(a: Uint8Array, b: Uint8Array): Bytes {
   return result
 }
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : 'Неизвестная ошибка.'
+/** Ошибка сессии несёт ключ локализации, а не готовый текст. */
+class SessionError extends Error {
+  constructor(readonly key: string) {
+    super(key)
+    this.name = 'SessionError'
+  }
 }
 
-/** Текст для случая, когда все пути исчерпаны. */
-function unreachableMessage(network: NetworkReport | null): string {
-  const reason =
-    network?.verdict === 'symmetric'
-      ? 'Ваш роутер выдаёт новый внешний порт на каждого собеседника (symmetric NAT). '
-      : network?.verdict === 'blocked'
-        ? 'В вашей сети заблокирован UDP. '
-        : ''
+function describe(error: unknown): Message {
+  return error instanceof SessionError ? message(error.key) : message('session.unknownError')
+}
 
-  return (
-    `Не удалось установить прямое соединение. ${reason}` +
-    'Попробуйте перейти с мобильного интернета на Wi-Fi, отключить VPN — ' +
-    'или развернуть свой сервер, достаточно одному из вас.'
-  )
+/**
+ * Текст для случая, когда все пути исчерпаны.
+ *
+ * Уточнение про тип NAT — отдельный ключ, а не склейка строк: собирать фразу
+ * из кусков на разных языках нельзя, порядок слов везде свой.
+ */
+function unreachableMessage(network: NetworkReport | null): Message {
+  if (network?.verdict === 'symmetric') return message('session.unreachable.symmetric')
+  if (network?.verdict === 'blocked') return message('session.unreachable.blocked')
+  return message('session.unreachable')
 }

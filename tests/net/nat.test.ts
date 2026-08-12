@@ -37,7 +37,7 @@ describe('classifyNat', () => {
     const diagnosis = classifyNat([probe('stun:a', 41234), probe('stun:b', 41999)])
     expect(diagnosis.verdict).toBe('symmetric')
     expect(diagnosis.directLikely).toBe(false)
-    expect(diagnosis.reason).toBeTruthy()
+    expect(diagnosis.reason.key).toBe('nat.symmetric.reason')
   })
 
   it('не путает разные локальные порты с symmetric NAT', () => {
@@ -72,6 +72,7 @@ describe('classifyNat', () => {
     const diagnosis = classifyNat([blocked, { ...blocked, server: 'stun:b' }])
     expect(diagnosis.verdict).toBe('blocked')
     expect(diagnosis.directLikely).toBe(false)
+    expect(diagnosis.reason.key).toBe('nat.blocked.reason')
   })
 
   it('честно говорит unknown, когда проба всего одна', () => {
@@ -88,7 +89,10 @@ describe('classifyNat', () => {
     // а фильтрацию (RFC 5780) браузер померить не даёт вовсе.
     const cone = classifyNat([probe('stun:a', 41234), probe('stun:b', 41234)])
     expect(cone.conclusive).toBe(false)
-    expect(cone.reason).toMatch(/собеседник/i)
+    // Пояснение к cone — отдельный ключ, а не пересказ «открытого» вывода;
+    // за честность самой формулировки отвечают тесты словаря в tests/i18n.
+    expect(cone.reason.key).toBe('nat.cone.reason')
+    expect(cone.reason.key).not.toBe('nat.open.reason')
 
     const symmetric = classifyNat([probe('stun:a', 41234), probe('stun:b', 41999)])
     expect(symmetric.conclusive).toBe(false)
@@ -113,9 +117,11 @@ describe('classifyNat', () => {
     expect(classifyNat([open, { ...open, server: 'stun:b' }]).conclusive).toBe(true)
   })
 
-  it('всегда объясняет вывод текстом для интерфейса', () => {
+  it('всегда даёт непустой ключ пояснения', () => {
     for (const probes of [[], [probe('stun:a', 1)], [probe('stun:a', 1), probe('stun:b', 2)]]) {
-      expect(classifyNat(probes).reason.length).toBeGreaterThan(0)
+      // Пустой ключ переводчик отдал бы обратно пустой строкой — интерфейс
+      // остался бы без объяснения вывода вовсе.
+      expect(classifyNat(probes).reason.key.length).toBeGreaterThan(0)
     }
   })
 })

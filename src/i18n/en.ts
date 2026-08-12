@@ -224,4 +224,5 @@ export const en: Record<string, string> = {
     'This browser does not support end-to-end frame encryption. The call will be protected by the standard WebRTC transport encryption only.',
   'passphrase.prompt': "A shared phrase you agreed on in advance, over a separate channel. Leave empty if you did not.",
   'settings.checkOk': "The address looks valid. Start a session to check the connection itself.",
+  'format.resolution': '{width}×{height}',
 }

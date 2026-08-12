@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { MediaError, describeMissing, listDevices, requestMedia } from '../../src/call/media.js'
-import type { MediaProvider } from '../../src/call/media.js'
+import type { MediaKind, MediaProvider } from '../../src/call/media.js'
+import { LOCALES, dictionary } from '../../src/i18n/index.js'
+import type { Message } from '../../src/i18n/message.js'
 
 /** Заглушка дорожки: настоящий MediaStreamTrack в node недоступен. */
 function track(kind: 'audio' | 'video'): MediaStreamTrack {
@@ -115,11 +117,32 @@ describe('requestMedia при неполном наборе устройств',
   })
 
   it('в объяснении перечисляет, что видит браузер', async () => {
+    // Перепись устройств отличает «нет железа» от «не дали разрешение», поэтому
+    // она обязана доехать до интерфейса — отдельным сообщением с подстановками.
     const devices = [{ kind: 'audioinput' } as MediaDeviceInfo]
     const result = await requestMedia({ preset: 'auto' }, provider({ available: [], devices }))
 
-    expect(result.problem?.message).toContain('камер: 0')
-    expect(result.problem?.message).toContain('микрофонов: 1')
+    expect(result.problem?.details).toEqual({
+      key: 'media.deviceCount',
+      params: { cameras: 0, microphones: 1 },
+    })
+  })
+
+  it('не теряет причину, добавляя перепись устройств', async () => {
+    const devices = [{ kind: 'audioinput' } as MediaDeviceInfo]
+    const result = await requestMedia({ preset: 'auto' }, provider({ available: [], devices }))
+
+    expect(result.problem?.text.key).toBe('media.absent')
+    expect(result.problem?.kind).toBe('absent')
+  })
+
+  it('переживает провал перечисления устройств и всё равно объясняет причину', async () => {
+    const fake = provider({ available: [] })
+    fake.enumerateDevices = () => Promise.reject(new Error('нет'))
+    const result = await requestMedia({ preset: 'auto' }, fake)
+
+    expect(result.problem?.text.key).toBe('media.absent')
+    expect(result.problem?.details).toBeNull()
   })
 })
 
@@ -164,23 +187,43 @@ describe('requestMedia при отказе в доступе', () => {
     expect(result.stream.getTracks()).toHaveLength(0)
   })
 
-  it('подсказывает про системные настройки, а не только про адресную строку', async () => {
+  it('объясняет отказ отдельным сообщением про разрешения', async () => {
+    // Текст живёт в словаре: тесту важно, что взят ключ именно про отказ,
+    // а не про «устройств не нашлось».
     const result = await requestMedia({ preset: 'auto' }, provider({ always: 'NotAllowedError' }))
-    expect(result.problem?.message).toMatch(/систем/i)
+    expect(result.problem?.text.key).toBe('media.denied')
   })
 
   it('отдельно объясняет занятое устройство', async () => {
     const result = await requestMedia({ preset: 'auto' }, provider({ always: 'NotReadableError' }))
 
     expect(result.problem?.kind).toBe('busy')
-    expect(result.problem?.message).toMatch(/занят/i)
+    expect(result.problem?.text.key).toBe('media.busy')
+  })
+
+  it('устройство, пропавшее из системы, объясняет по-своему', async () => {
+    const result = await requestMedia(
+      { preset: 'auto' },
+      provider({ always: 'OverconstrainedError' }),
+    )
+
+    expect(result.problem?.kind).toBe('overconstrained')
+    expect(result.problem?.text.key).toBe('media.overconstrained')
   })
 
   it('на незащищённой странице не падает, а объясняет и пускает смотреть', async () => {
     const result = await requestMedia({ preset: 'auto' }, provider({ secure: false }))
 
     expect(result.problem?.kind).toBe('insecure')
+    expect(result.problem?.text.key).toBe('media.insecure')
     expect(result.stream.getTracks()).toHaveLength(0)
+  })
+
+  it('оставляет в самой ошибке осмысленную строку для логов', async () => {
+    const result = await requestMedia({ preset: 'auto' }, provider({ always: 'NotAllowedError' }))
+
+    expect(result.problem).toBeInstanceOf(Error)
+    expect(result.problem?.message).toBe('media.denied')
   })
 })
 
@@ -192,8 +235,32 @@ describe('listDevices', () => {
     ] as MediaDeviceInfo[]
 
     return listDevices(provider({ devices })).then((list) => {
-      expect(list.cameras[0]?.label).toBe('Камера 1')
+      // Своё имя устройства переводить нечего — оно уходит строкой как есть,
+      // а безымянному достаётся ключ с номером.
+      expect(list.cameras[0]?.label).toEqual({
+        key: 'devices.cameraFallback',
+        params: { index: 1 },
+      })
       expect(list.microphones[0]?.label).toBe('Гарнитура')
+    })
+  })
+
+  it('нумерует безымянные устройства внутри своего вида', async () => {
+    const devices = [
+      { kind: 'videoinput', deviceId: 'cam-1', label: '' },
+      { kind: 'audioinput', deviceId: 'mic-1', label: '' },
+      { kind: 'videoinput', deviceId: 'cam-2', label: '' },
+    ] as MediaDeviceInfo[]
+
+    const list = await listDevices(provider({ devices }))
+
+    expect(list.cameras.map((option) => option.label)).toEqual([
+      { key: 'devices.cameraFallback', params: { index: 1 } },
+      { key: 'devices.cameraFallback', params: { index: 2 } },
+    ])
+    expect(list.microphones[0]?.label).toEqual({
+      key: 'devices.microphoneFallback',
+      params: { index: 1 },
     })
   })
 
@@ -213,12 +280,88 @@ describe('describeMissing', () => {
     expect(describeMissing([])).toBeNull()
   })
 
-  it('объясняет последствия, а не просто называет пропажу', () => {
-    expect(describeMissing(['video'])).toMatch(/слышать/)
-    expect(describeMissing(['audio'])).toMatch(/видеть/)
+  it('различает пропавшую камеру и пропавший микрофон', () => {
+    expect(describeMissing(['video'])).toEqual({ key: 'media.missing.video' })
+    expect(describeMissing(['audio'])).toEqual({ key: 'media.missing.audio' })
   })
 
-  it('про полное отсутствие устройств говорит как о режиме, а не как об ошибке', () => {
-    expect(describeMissing(['video', 'audio'])).toMatch(/просмотр/)
+  it('про полное отсутствие устройств говорит отдельным сообщением', () => {
+    // Отдельный ключ, а не два подряд: это не две поломки, а режим просмотра.
+    expect(describeMissing(['video', 'audio'])).toEqual({ key: 'media.missing.both' })
+    expect(describeMissing(['audio', 'video'])).toEqual({ key: 'media.missing.both' })
+  })
+})
+
+/**
+ * Ключи собираются прогоном самого модуля, а не переписываются в тест руками:
+ * список, набранный вручную, протухает на первом же новом сообщении.
+ */
+async function usedMessages(): Promise<Message[]> {
+  const problems: (MediaError | null)[] = []
+  for (const always of [
+    'NotAllowedError',
+    'SecurityError',
+    'NotFoundError',
+    'OverconstrainedError',
+    'NotReadableError',
+    'AbortError',
+    'ЧтоТоНовое',
+  ]) {
+    problems.push((await requestMedia({ preset: 'auto' }, provider({ always }))).problem)
+  }
+  problems.push((await requestMedia({ preset: 'auto' }, provider({ secure: false }))).problem)
+  problems.push(
+    (await requestMedia({ preset: 'auto' }, provider({ available: [], devices: [] }))).problem,
+  )
+
+  // Браузер без mediaDevices: единственный путь к 'media.unsupported'.
+  const ancient = { ...provider({ always: 'ЧтоТоНовое' }), enumerateDevices: undefined }
+  problems.push(
+    (await requestMedia({ preset: 'auto' }, ancient as unknown as MediaProvider)).problem,
+  )
+
+  const devices = [
+    { kind: 'videoinput', deviceId: 'cam-1', label: '' },
+    { kind: 'audioinput', deviceId: 'mic-1', label: '' },
+  ] as MediaDeviceInfo[]
+  const list = await listDevices(provider({ devices }))
+
+  const missing: MediaKind[][] = [['video'], ['audio'], ['video', 'audio']]
+
+  return [
+    ...problems.flatMap((problem) =>
+      problem === null ? [] : [problem.text, ...(problem.details === null ? [] : [problem.details])],
+    ),
+    ...missing.flatMap((kinds) => describeMissing(kinds) ?? []),
+    ...[...list.cameras, ...list.microphones].flatMap((option) =>
+      typeof option.label === 'string' ? [] : [option.label],
+    ),
+  ]
+}
+
+describe('сообщения модуля', () => {
+  it('ссылаются только на ключи, которые есть во всех словарях', async () => {
+    const keys = [...new Set((await usedMessages()).map((item) => item.key))]
+    expect(keys.length).toBeGreaterThan(0)
+
+    for (const locale of LOCALES) {
+      const dict = dictionary(locale)
+      expect(
+        keys.filter((key) => dict[key] === undefined),
+        `нет в ${locale}`,
+      ).toEqual([])
+    }
+  })
+
+  it('передают подстановки, которые словарь ожидает', async () => {
+    // Незаполненный плейсхолдер видно в интерфейсе как «{index}» — проверяем,
+    // что модуль отдаёт ровно те имена, что стоят в тексте.
+    const dict = dictionary('ru')
+
+    for (const item of await usedMessages()) {
+      const template = dict[item.key] ?? ''
+      const expected = [...template.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((match) => match[1])
+      expect(Object.keys(item.params ?? {}).sort(), item.key).toEqual(expected.sort())
+    }
   })
 })

@@ -10,32 +10,38 @@ import {
 
 describe('formatBitrate', () => {
   it('показывает килобиты на малых скоростях', () => {
-    expect(formatBitrate(350_000)).toBe('350 кбит/с')
+    expect(formatBitrate(350_000)).toEqual({ key: 'format.kbps', params: { value: 350 } })
   })
 
   it('переходит на мегабиты от миллиона', () => {
-    expect(formatBitrate(2_400_000)).toBe('2.4 Мбит/с')
+    expect(formatBitrate(2_400_000)).toEqual({ key: 'format.mbps', params: { value: '2.4' } })
+  })
+
+  it('сохраняет знак после запятой у круглых мегабит', () => {
+    // «2 Мбит/с» и «2.0 Мбит/с» — разная заявленная точность измерения.
+    expect(formatBitrate(2_000_000)).toEqual({ key: 'format.mbps', params: { value: '2.0' } })
   })
 
   it('не рисует цифры там, где данных ещё нет', () => {
     for (const value of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(formatBitrate(value), String(value)).toBe('—')
+      expect(formatBitrate(value), String(value)).toEqual({ key: 'format.none' })
     }
   })
 })
 
 describe('formatRoundTrip', () => {
   it('показывает миллисекунды', () => {
-    expect(formatRoundTrip(42)).toBe('42 мс')
+    expect(formatRoundTrip(42)).toEqual({ key: 'format.ms', params: { value: 42 } })
   })
 
   it('честно молчит, пока задержка не измерена', () => {
-    expect(formatRoundTrip(null)).toBe('—')
+    expect(formatRoundTrip(null)).toEqual({ key: 'format.none' })
   })
 })
 
 describe('formatLoss', () => {
   it('показывает нулевые потери как нуль, а не как прочерк', () => {
+    // Ноль — это измеренный результат; прочерк читался бы как «не измеряли».
     expect(formatLoss(0)).toBe('0%')
   })
 
@@ -47,37 +53,46 @@ describe('formatLoss', () => {
 
 describe('formatResolution', () => {
   it('склеивает ширину и высоту', () => {
-    expect(formatResolution(1280, 720)).toBe('1280×720')
+    expect(formatResolution(1280, 720)).toEqual({
+      key: 'format.resolution',
+      params: { width: 1280, height: 720 },
+    })
   })
 
   it('молчит, если размер неизвестен', () => {
-    expect(formatResolution(null, 720)).toBe('—')
-    expect(formatResolution(1280, null)).toBe('—')
+    expect(formatResolution(null, 720)).toEqual({ key: 'format.none' })
+    expect(formatResolution(1280, null)).toEqual({ key: 'format.none' })
   })
 })
 
 describe('describeConnection', () => {
   it('различает локальное, прямое и ретранслируемое соединение', () => {
-    expect(describeConnection('local')).toContain('локальная')
-    expect(describeConnection('direct')).toContain('прямое')
-    expect(describeConnection('relay')).toContain('ретранслятор')
+    expect(describeConnection('local')).toEqual({ key: 'connection.local' })
+    expect(describeConnection('direct')).toEqual({ key: 'connection.direct' })
+    expect(describeConnection('relay')).toEqual({ key: 'connection.relay' })
   })
 
   it('пока тип неизвестен, не утверждает, что соединение прямое', () => {
-    expect(describeConnection(null)).not.toContain('прямое')
+    // Соединение вполне может оказаться ретранслируемым — до выбора пары
+    // кандидатов мы просто молчим.
+    expect(describeConnection(null)).toEqual({ key: 'connection.pending' })
+    expect(describeConnection(null).key).not.toBe(describeConnection('direct').key)
+    expect(describeConnection(null).key).not.toBe(describeConnection('local').key)
   })
 })
 
 describe('describeEncryption', () => {
   it('называет сквозное шифрование сквозным', () => {
-    expect(describeEncryption(true)).toEqual({ text: 'сквозное шифрование', ok: true })
+    expect(describeEncryption(true)).toEqual({ text: { key: 'encryption.e2ee' }, ok: true })
   })
 
   it('без слоя кадров говорит «только транспортное», а не «выключено»', () => {
-    // Транспортное шифрование в WebRTC отключить нельзя, и врать про это нельзя тоже.
+    // Транспортное шифрование в WebRTC отключить нельзя, и врать про это нельзя
+    // тоже: здесь проверяем выбор ключа, а честность формулировки в каждом
+    // языке — тесты словаря в tests/i18n.
     const state = describeEncryption(false)
     expect(state.ok).toBe(false)
-    expect(state.text).toContain('транспортное')
-    expect(state.text).not.toContain('выключ')
+    expect(state.text).toEqual({ key: 'encryption.transportOnly' })
+    expect(state.text.key).not.toBe('encryption.e2ee')
   })
 })

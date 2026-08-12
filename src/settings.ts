@@ -1,5 +1,7 @@
 import { isLocale } from './i18n/index.js'
 import type { Locale } from './i18n/index.js'
+import { message } from './i18n/message.js'
+import type { Message } from './i18n/message.js'
 import { QUALITY_PRESETS, isQualityPreset } from './media/quality.js'
 import type { QualityPreset } from './media/quality.js'
 import { isAllowedServer } from './signaling/link.js'
@@ -24,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   microphoneId: null,
 }
 
-export type ServerCheck = { ok: true } | { ok: false; error: string }
+export type ServerCheck = { ok: true } | { ok: false; error: Message }
 
 /**
  * Проверяет адрес сигналинга.
@@ -35,17 +37,13 @@ export type ServerCheck = { ok: true } | { ok: false; error: string }
  */
 export function validateServerUrl(raw: string): ServerCheck {
   const url = raw.trim()
-  if (url.length === 0) return { ok: false, error: 'Укажите адрес сигнального сервера.' }
-
+  if (url.length === 0) return { ok: false, error: message('settings.error.empty') }
   if (isAllowedServer(url)) return { ok: true }
 
-  if (/^wss?:\/\//i.test(url)) {
-    return {
-      ok: false,
-      error: 'Незашифрованный ws:// разрешён только на localhost. Используйте wss://',
-    }
-  }
-  return { ok: false, error: 'Адрес должен начинаться с wss:// — например, wss://call.example.com/ws' }
+  // Отдельная формулировка для ws://: дело не в опечатке, а в том, что страница
+  // отдаётся по HTTPS и браузер заблокирует такое соединение как mixed content.
+  const scheme = /^wss?:\/\//i.test(url) ? 'settings.error.insecure' : 'settings.error.scheme'
+  return { ok: false, error: message(scheme) }
 }
 
 /** Читает настройки, молча заменяя испорченные значения умолчаниями. */

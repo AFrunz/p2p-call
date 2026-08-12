@@ -43,14 +43,21 @@ describe('validateServerUrl', () => {
   })
 
   it('объясняет, почему ws:// не подходит снаружи', () => {
-    // Пользователь должен понять, что дело в mixed content, а не в опечатке.
-    const result = validateServerUrl('ws://call.example.com/ws')
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toMatch(/wss/)
+    // У ws:// своя причина отказа — mixed content, а не опечатка в схеме.
+    // Пользователю нужны разные подсказки, поэтому и ключи разные.
+    const insecure = validateServerUrl('ws://call.example.com/ws')
+    const wrong = validateServerUrl('call.example.com')
+
+    expect(insecure.ok).toBe(false)
+    expect(wrong.ok).toBe(false)
+    if (!insecure.ok) expect(insecure.error.key).toBe('settings.error.insecure')
+    if (!wrong.ok) expect(wrong.error.key).toBe('settings.error.scheme')
   })
 
   it('отвергает пустой адрес', () => {
-    expect(validateServerUrl('   ').ok).toBe(false)
+    const result = validateServerUrl('   ')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.key).toBe('settings.error.empty')
   })
 
   it('отвергает http и мусор', () => {

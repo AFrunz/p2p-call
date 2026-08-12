@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  // GitHub Pages раздаёт проект из подпути /<repo>/ — правится под реальное имя репозитория.
+  // Пути к ассетам относительные: тогда сайт одинаково работает и в корне
+  // домена, и из подпути /<repo>/ на GitHub Pages — правки под имя
+  // репозитория не требуются.
   base: './',
   build: {
     target: 'es2022',

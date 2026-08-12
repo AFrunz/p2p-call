@@ -1,3 +1,5 @@
+import { message } from '../i18n/message.js'
+import type { Message } from '../i18n/message.js'
 import type { CandidateType, IceCandidateInfo } from '../signaling/types.js'
 
 /**
@@ -17,8 +19,13 @@ export interface StunProbe {
 
 export interface NatDiagnosis {
   verdict: NatVerdict
-  /** Человекочитаемое объяснение — идёт прямо в интерфейс. */
-  reason: string
+  /**
+   * Объяснение вывода — ключ локализации, а не готовая строка.
+   *
+   * Диагностика считается один раз, а язык интерфейса можно переключить в любой
+   * момент: храня ключ, мы не обязаны перезапускать пробы после смены языка.
+   */
+  reason: Message
   /** Есть ли шанс соединиться напрямую без TURN. */
   directLikely: boolean
   /**
@@ -43,7 +50,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
   if (probes.length === 0) {
     return {
       verdict: 'unknown',
-      reason: 'Проверка сети ещё не выполнялась.',
+      reason: message('nat.pending.reason'),
       directLikely: true,
       conclusive: false,
     }
@@ -58,9 +65,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
   if (reflexive.length === 0) {
     return {
       verdict: 'blocked',
-      reason:
-        'Ни один STUN-сервер не ответил: похоже, в этой сети заблокирован UDP. ' +
-        'Прямое соединение не установится ни с кем — нужен сервер-ретранслятор.',
+      reason: message('nat.blocked.reason'),
       directLikely: false,
       conclusive: true,
     }
@@ -75,9 +80,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
   if (noNat) {
     return {
       verdict: 'open',
-      reason:
-        'У вас публичный адрес без NAT. С вашей стороны препятствий нет: ' +
-        'к вам сможет пробиться собеседник с любым роутером.',
+      reason: message('nat.open.reason'),
       directLikely: true,
       conclusive: true,
     }
@@ -98,10 +101,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
     if (entry.ports.size > 1) {
       return {
         verdict: 'symmetric',
-        reason:
-          'Ваш роутер выдаёт новый внешний порт на каждого собеседника (symmetric NAT). ' +
-          'С таким же роутером у собеседника прямое соединение не установится совсем, ' +
-          'с обычным — как повезёт. Заранее это не проверить: понадобится попытка.',
+        reason: message('nat.symmetric.reason'),
         directLikely: false,
         conclusive: false,
       }
@@ -112,9 +112,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
     if (entry.servers.size >= 2) {
       return {
         verdict: 'cone',
-        reason:
-          'Ваш NAT сохраняет внешний порт — с вашей стороны препятствий нет. ' +
-          'Получится ли соединение, зависит ещё и от роутера собеседника.',
+        reason: message('nat.cone.reason'),
         directLikely: true,
         conclusive: false,
       }
@@ -123,8 +121,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
 
   return {
     verdict: 'unknown',
-    reason:
-      'Ответил только один STUN-сервер: отличить обычный NAT от symmetric по одной пробе нельзя.',
+    reason: message('nat.unknown.reason'),
     directLikely: true,
     conclusive: false,
   }
