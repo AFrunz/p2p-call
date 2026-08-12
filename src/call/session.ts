@@ -55,6 +55,15 @@ const CONNECT_TIMEOUT_MS = { manual: 180_000, signaling: 45_000 }
 /** Сколько раз пересобираем ответ, пока собеседник несёт код. */
 const MAX_ANSWER_REFRESH = 3
 
+/**
+ * Как часто подкидываем агенту заведомо недостижимого кандидата.
+ *
+ * ICE объявляет провал, когда проверять больше нечего: список пар исчерпан,
+ * сбор завершён. Пока появляются новые пары, агент остаётся в checking — на
+ * этом и держится ожидание, пока человек несёт код.
+ */
+const KEEP_ALIVE_INTERVAL_MS = 4000
+
 export type Phase =
   | 'idle'
   | 'preparing'
@@ -193,6 +202,8 @@ export class CallSession {
   /** Кандидаты собеседника, придержанные до готовности человека. */
   private heldCandidates: string[] = []
   private releaseTimer: ReturnType<typeof setTimeout> | null = null
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null
+  private keepAliveIndex = 0
   private refreshes = 0
   private restarted = false
   /** Соединение хоть раз состоялось: обрыв после этого — не «не удалось подключиться». */
@@ -637,6 +648,49 @@ export class CallSession {
     const wait = Math.max(0, startAt - Date.now())
     this.patch({ startAt })
     this.releaseTimer = setTimeout(() => void this.startChecking(), wait)
+    this.startKeepAlive()
+  }
+
+  /**
+   * Держит агента в работе, пока настоящие кандидаты придержаны.
+   *
+   * Адреса из TEST-NET (RFC 5737) заведомо никуда не ведут: пара честно
+   * провалится, но сам факт её появления не даёт агенту закрыть список и
+   * объявить, что соединяться не с чем.
+   */
+  private startKeepAlive(): void {
+    if (this.keepAliveTimer !== null) return
+
+    const feed = () => {
+      const connection = this.connection
+      if (connection === null || this.heldCandidates.length === 0) return this.stopKeepAlive()
+
+      this.keepAliveIndex++
+      const index = this.keepAliveIndex
+      const candidate =
+        `candidate:${900000 + index} 1 udp ${index} 198.51.100.${(index % 254) + 1}` +
+        ` ${20000 + (index % 40000)} typ host`
+
+      void connection
+        .addIceCandidate({ candidate, sdpMLineIndex: 0 })
+        .then(() => {
+          if (index % 5 === 1) {
+            console.debug(`[p2p] удерживаем ICE: подкормок ${index}, состояние ${connection.iceConnectionState}`)
+          }
+        })
+        .catch((error: unknown) => {
+          console.debug('[p2p] удержание ICE прервано:', error instanceof Error ? error.name : error)
+          this.stopKeepAlive()
+        })
+    }
+
+    feed()
+    this.keepAliveTimer = setInterval(feed, KEEP_ALIVE_INTERVAL_MS)
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAliveTimer !== null) clearInterval(this.keepAliveTimer)
+    this.keepAliveTimer = null
   }
 
   async startChecking(): Promise<void> {
@@ -645,6 +699,7 @@ export class CallSession {
     if (connection === null || held.length === 0) return
 
     this.heldCandidates = []
+    this.stopKeepAlive()
     if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
     this.releaseTimer = null
     this.patch({ startAt: null })
@@ -980,6 +1035,7 @@ export class CallSession {
 
   private teardown(): void {
     this.stopWatchdog()
+    this.stopKeepAlive()
     if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
     this.releaseTimer = null
     if (this.statsTimer !== null) clearInterval(this.statsTimer)
