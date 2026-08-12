@@ -162,6 +162,16 @@ export class CallSession {
 
   constructor(private options: SessionOptions) {}
 
+  /**
+   * Сводка по требованию: `__p2p.stats()` в консоли.
+   *
+   * Автоматическая выкладка привязана к провалу и может не успеть, если
+   * соединение закрылось раньше. Ручная работает, пока звонок жив.
+   */
+  diagnose(): void {
+    void this.dumpCandidates()
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener)
     listener(this.view)
@@ -424,7 +434,6 @@ export class CallSession {
         // Раньше он стартовал сразу после генерации ответного кода — и тикал,
         // пока человек переносил этот код в другую вкладку.
         if (connection.iceConnectionState === 'checking') this.startWatchdog()
-        if (connection.iceConnectionState === 'failed') void this.dumpCandidates()
         if (connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') {
           this.stopWatchdog()
         }
@@ -485,9 +494,9 @@ export class CallSession {
           // Не вышло — падаем в общий текст ниже.
         }
       }
-      void this.dumpCandidates()
-      // Соединение не поднялось после честной попытки и рестарта ICE — это
-      // ровно тот случай, когда помогает только ретранслятор.
+      // Обязательно ДО fail: teardown закрывает соединение, а getStats на
+      // закрытом уже ничего не расскажет — выкладка терялась целиком.
+      await this.dumpCandidates()
       this.fail(unreachableMessage(this.view.network), true)
     }
   }
@@ -570,8 +579,10 @@ export class CallSession {
     this.watchdog = setTimeout(() => {
       if (this.view.phase === 'connected') return
       this.trace('сторожевой таймер')
-      void this.dumpCandidates()
-      this.fail(unreachableMessage(this.view.network), true)
+
+      void this.dumpCandidates().then(() => {
+        this.fail(unreachableMessage(this.view.network), true)
+      })
     }, CONNECT_TIMEOUT_MS)
   }
 
@@ -616,8 +627,8 @@ export class CallSession {
         const [from, to] = (ids ?? '').split('->')
         console.debug('[p2p] пара', state, local.get(from ?? '') ?? from, '->', remote.get(to ?? '') ?? to)
       }
-    } catch {
-      // Статистика недоступна — не повод падать поверх уже случившегося провала.
+    } catch (error) {
+      console.debug('[p2p] статистика недоступна:', error)
     }
   }
 

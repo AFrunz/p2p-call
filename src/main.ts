@@ -776,7 +776,19 @@ function wire(): void {
 
 // -------------------------------------------------------------------- запуск
 
+/** Отладочный доступ из консоли: `__p2p.stats()` и `__p2p.state()`. */
+function exposeDiagnostics(): void {
+  Object.defineProperty(window, '__p2p', {
+    value: {
+      stats: () => session?.diagnose() ?? console.debug('[p2p] звонка нет'),
+      state: () => ({ phase: session?.phase ?? 'idle', network, inviteLink }),
+    },
+    configurable: true,
+  })
+}
+
 function start(): void {
+  exposeDiagnostics()
   applyTranslations()
   fillQuality()
   renderLangs()
