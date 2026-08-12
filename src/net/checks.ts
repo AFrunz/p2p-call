@@ -49,7 +49,7 @@ export function buildChecks(report: NetworkReport | null): ChecksView {
     }
   }
 
-  const reflexive = firstReflexive(report.probes)
+  const reflexive = firstReflexive(report.probe)
 
   // Красный вердикт и кнопка сервера — только когда вывод не зависит от второй
   // стороны и она уже ничего не спасёт: фактически при заблокированном UDP.
@@ -134,13 +134,8 @@ function verdictState(report: NetworkReport): CheckState {
   }
 }
 
-function firstReflexive(probes: readonly StunProbe[]): IceCandidateInfo | null {
-  for (const probe of probes) {
-    for (const candidate of probe.candidates) {
-      if (candidate.type === 'srflx') return candidate
-    }
-  }
-  return null
+function firstReflexive(probe: StunProbe): IceCandidateInfo | null {
+  return probe.candidates.find((candidate) => candidate.type === 'srflx') ?? null
 }
 
 function check(id: CheckId, state: CheckState, noteKey: string): NetworkCheck {

@@ -32,29 +32,29 @@ function placeholders(text: string): string[] {
   return [...text.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((match) => match[1] as string).sort()
 }
 
-/** Проба к STUN: локальный порт один, внешний — как решит NAT. */
-function probe(server: string, externalPort: number, localPort = 54321): StunProbe {
+/** Проба: один сокет опрашивает несколько серверов и получает внешние порты. */
+function probe(externalPorts: number[], servers = externalPorts.length): StunProbe {
   return {
-    server,
-    candidates: [
+    servers,
+    candidates: [...new Set(externalPorts)].map((port) =>
       candidate({
         type: 'srflx',
         address: '203.0.113.7',
-        port: externalPort,
+        port,
         relatedAddress: '192.168.1.5',
-        relatedPort: localPort,
+        relatedPort: 54321,
       }),
-    ],
+    ),
   }
 }
 
-function report(probes: StunProbe[], ipv6 = false): NetworkReport {
-  return { ...classifyNat(probes), probes, ipv6 }
+function report(probe: StunProbe, ipv6 = false): NetworkReport {
+  return { ...classifyNat(probe), probe, ipv6 }
 }
 
 /** Ключи, которые таблица проверок способна попросить у словаря. */
 function checksKeys(): string[] {
-  const publicAddress = probe('stun:a', 54321)
+  const publicAddress = probe([54321])
   publicAddress.candidates = publicAddress.candidates.map((info) => ({
     ...info,
     relatedAddress: info.address,
@@ -63,11 +63,11 @@ function checksKeys(): string[] {
 
   const views = [
     buildChecks(null),
-    buildChecks(report([probe('stun:a', 41234), probe('stun:b', 41234)], true)),
-    buildChecks(report([probe('stun:a', 41234), probe('stun:b', 41999)])),
-    buildChecks(report([{ server: 'stun:a', candidates: [] }])),
-    buildChecks(report([probe('stun:a', 41234)])),
-    buildChecks(report([publicAddress])),
+    buildChecks(report(probe([41234, 41234]), true)),
+    buildChecks(report(probe([41234, 41999]))),
+    buildChecks(report({ servers: 2, candidates: [] })),
+    buildChecks(report(probe([41234], 1))),
+    buildChecks(report(publicAddress)),
   ]
 
   return [

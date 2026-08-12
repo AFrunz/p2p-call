@@ -11,9 +11,16 @@ import type { CandidateType, IceCandidateInfo } from '../signaling/types.js'
  */
 export type NatVerdict = 'open' | 'cone' | 'symmetric' | 'blocked' | 'unknown'
 
-/** Результат сбора кандидатов с одного STUN-сервера. */
+/**
+ * Результат одной пробы сети.
+ *
+ * Кандидаты собираются ОДНИМ соединением сразу ко всем серверам. Разными
+ * соединениями мерить нельзя: у каждого свой локальный сокет, а значит и свой
+ * внешний порт даже на самом обычном NAT — сравнивать было бы нечего.
+ */
 export interface StunProbe {
-  server: string
+  /** Сколько STUN-серверов опрашивалось. */
+  servers: number
   candidates: IceCandidateInfo[]
 }
 
@@ -40,14 +47,18 @@ export interface NatDiagnosis {
 }
 
 /**
- * Определяет тип NAT по srflx-кандидатам с нескольких STUN-серверов.
+ * Определяет тип NAT по srflx-кандидатам.
  *
- * Ключевой признак symmetric NAT: один и тот же локальный порт (related address)
- * виден снаружи под разными портами в зависимости от того, к какому серверу шёл
- * трафик. Именно поэтому нужно минимум две пробы к разным серверам.
+ * Признак symmetric NAT: один и тот же локальный сокет виден снаружи под
+ * разными портами в зависимости от того, к какому серверу шёл трафик. Поэтому
+ * серверов нужно минимум два, и опрашивать их обязательно с одного сокета.
+ *
+ * Обратный случай — совпадение портов — браузер до нас не доносит: одинаковые
+ * srflx-кандидаты он схлопывает в один. Поэтому «спросили двоих, расхождения
+ * не увидели» и есть признак обычного NAT.
  */
-export function classifyNat(probes: StunProbe[]): NatDiagnosis {
-  if (probes.length === 0) {
+export function classifyNat(probe: StunProbe): NatDiagnosis {
+  if (probe.servers === 0) {
     return {
       verdict: 'unknown',
       reason: message('nat.pending.reason'),
@@ -56,11 +67,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
     }
   }
 
-  const reflexive = probes.flatMap((probe) =>
-    probe.candidates
-      .filter((candidate) => candidate.type === 'srflx')
-      .map((candidate) => ({ server: probe.server, candidate })),
-  )
+  const reflexive = probe.candidates.filter((candidate) => candidate.type === 'srflx')
 
   if (reflexive.length === 0) {
     return {
@@ -72,7 +79,7 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
   }
 
   const noNat = reflexive.some(
-    ({ candidate }) =>
+    (candidate) =>
       candidate.relatedAddress !== undefined &&
       candidate.relatedAddress === candidate.address &&
       candidate.relatedPort === candidate.port,
@@ -87,18 +94,17 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
   }
 
   // Сравнивать внешние порты имеет смысл только в пределах одного локального
-  // сокета: разные сокеты законно получают разные порты и на cone NAT.
-  const byBase = new Map<string, { ports: Set<number>; servers: Set<string> }>()
-  for (const { server, candidate } of reflexive) {
+  // сокета: разные сокеты законно получают разные порты и на обычном NAT.
+  const byBase = new Map<string, Set<number>>()
+  for (const candidate of reflexive) {
     const base = `${candidate.relatedAddress ?? '?'}:${candidate.relatedPort ?? '?'}`
-    const entry = byBase.get(base) ?? { ports: new Set<number>(), servers: new Set<string>() }
-    entry.ports.add(candidate.port)
-    entry.servers.add(server)
-    byBase.set(base, entry)
+    const ports = byBase.get(base) ?? new Set<number>()
+    ports.add(candidate.port)
+    byBase.set(base, ports)
   }
 
-  for (const entry of byBase.values()) {
-    if (entry.ports.size > 1) {
+  for (const ports of byBase.values()) {
+    if (ports.size > 1) {
       return {
         verdict: 'symmetric',
         reason: message('nat.symmetric.reason'),
@@ -108,14 +114,12 @@ export function classifyNat(probes: StunProbe[]): NatDiagnosis {
     }
   }
 
-  for (const entry of byBase.values()) {
-    if (entry.servers.size >= 2) {
-      return {
-        verdict: 'cone',
-        reason: message('nat.cone.reason'),
-        directLikely: true,
-        conclusive: false,
-      }
+  if (probe.servers >= 2) {
+    return {
+      verdict: 'cone',
+      reason: message('nat.cone.reason'),
+      directLikely: true,
+      conclusive: false,
     }
   }
 

@@ -6,34 +6,39 @@ import type { StunProbe } from '../../src/net/nat.js'
 import type { NetworkReport } from '../../src/net/probe.js'
 import { candidate } from '../fixtures/sdp.js'
 
-/** Проба к STUN: локальный порт один и тот же, внешний — как решит NAT. */
-function probe(server: string, externalPort: number, localPort = 54321): StunProbe {
+/**
+ * Проба: один сокет опрашивает несколько серверов и получает по внешнему порту
+ * с каждого. Одинаковые кандидаты браузер схлопывает — повторяем это здесь.
+ */
+function probe(externalPorts: number[], servers = externalPorts.length): StunProbe {
   return {
-    server,
+    servers,
     candidates: [
-      candidate({ type: 'host', address: '192.168.1.5', port: localPort }),
-      candidate({
-        type: 'srflx',
-        address: '203.0.113.7',
-        port: externalPort,
-        relatedAddress: '192.168.1.5',
-        relatedPort: localPort,
-      }),
+      candidate({ type: 'host', address: '192.168.1.5', port: 54321 }),
+      ...[...new Set(externalPorts)].map((port) =>
+        candidate({
+          type: 'srflx',
+          address: '203.0.113.7',
+          port,
+          relatedAddress: '192.168.1.5',
+          relatedPort: 54321,
+        }),
+      ),
     ],
   }
 }
 
 /** Проба, из которой не вернулось ни одного srflx: STUN промолчал. */
-function silent(server: string): StunProbe {
-  return { server, candidates: [candidate({ type: 'host', address: '192.168.1.5' })] }
+function silent(servers = 2): StunProbe {
+  return { servers, candidates: [candidate({ type: 'host', address: '192.168.1.5' })] }
 }
 
 /**
  * Отчёт собираем настоящим классификатором, как это делает probeNetwork:
  * иначе легко разъехаться с полями conclusive/directLikely, на которых всё держится.
  */
-function report(probes: StunProbe[], ipv6 = false): NetworkReport {
-  return { ...classifyNat(probes), probes, ipv6 }
+function report(probe: StunProbe, ipv6 = false): NetworkReport {
+  return { ...classifyNat(probe), probe, ipv6 }
 }
 
 function stateOf(view: ChecksView, id: CheckId): string {
@@ -42,35 +47,21 @@ function stateOf(view: ChecksView, id: CheckId): string {
   return found?.state ?? 'missing'
 }
 
-const cone = report([probe('stun:a', 41234), probe('stun:b', 41234)])
-const symmetric = report([probe('stun:a', 41234), probe('stun:b', 41999)])
-const blocked = report([silent('stun:a'), silent('stun:b')])
-const open = report([
-  {
-    server: 'stun:a',
-    candidates: [
-      candidate({
-        type: 'srflx',
-        address: '203.0.113.7',
-        port: 54321,
-        relatedAddress: '203.0.113.7',
-        relatedPort: 54321,
-      }),
-    ],
-  },
-  {
-    server: 'stun:b',
-    candidates: [
-      candidate({
-        type: 'srflx',
-        address: '203.0.113.7',
-        port: 54321,
-        relatedAddress: '203.0.113.7',
-        relatedPort: 54321,
-      }),
-    ],
-  },
-])
+const cone = report(probe([41234, 41234]))
+const symmetric = report(probe([41234, 41999]))
+const blocked = report(silent())
+const open = report({
+  servers: 2,
+  candidates: [
+    candidate({
+      type: 'srflx',
+      address: '203.0.113.7',
+      port: 54321,
+      relatedAddress: '203.0.113.7',
+      relatedPort: 54321,
+    }),
+  ],
+})
 
 /** Все интересные исходы разом — по ним гоняем инварианты таблицы. */
 const allViews: ChecksView[] = [null, cone, symmetric, blocked, open].map((input) =>
@@ -123,7 +114,7 @@ describe('buildChecks', () => {
   })
 
   it('когда ответил только один STUN, честно оставляет тип NAT в ожидании', () => {
-    const view = buildChecks(report([probe('stun:a', 41234)]))
+    const view = buildChecks(report(probe([41234], 1)))
     expect(stateOf(view, 'nat')).toBe('pending')
     expect(stateOf(view, 'reachability')).toBe('ok')
     expect(view.verdict.state).not.toBe('fail')
@@ -139,10 +130,10 @@ describe('buildChecks', () => {
   })
 
   it('считает отсутствие IPv6 предупреждением, а не ошибкой', () => {
-    expect(stateOf(buildChecks(report(cone.probes, false)), 'ipv6')).toBe('warn')
-    expect(stateOf(buildChecks(report(cone.probes, true)), 'ipv6')).toBe('ok')
+    expect(stateOf(buildChecks(report(cone.probe, false)), 'ipv6')).toBe('warn')
+    expect(stateOf(buildChecks(report(cone.probe, true)), 'ipv6')).toBe('ok')
     // Потерянный простой путь не должен портить общий вердикт.
-    expect(buildChecks(report(cone.probes, false)).verdict.state).toBe('ok')
+    expect(buildChecks(report(cone.probe, false)).verdict.state).toBe('ok')
   })
 
   it('всегда отдаёт ровно четыре проверки в одном и том же порядке', () => {

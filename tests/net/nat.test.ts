@@ -9,47 +9,72 @@ import {
 import type { StunProbe } from '../../src/net/nat.js'
 import { candidate } from '../fixtures/sdp.js'
 
-/** Проба к STUN: локальный порт один и тот же, внешний — как решит NAT. */
-function probe(server: string, externalPort: number, localPort = 54321): StunProbe {
+/**
+ * Проба: один сокет опрашивает несколько серверов, каждый отвечает своим
+ * внешним портом. Один порт на все — обычный NAT, разные — symmetric.
+ */
+function probe(externalPorts: number[], localPort = 54321, servers = externalPorts.length): StunProbe {
+  const seen = [...new Set(externalPorts)]
   return {
-    server,
+    servers,
     candidates: [
       candidate({ type: 'host', address: '192.168.1.5', port: localPort }),
-      candidate({
-        type: 'srflx',
-        address: '203.0.113.7',
-        port: externalPort,
-        relatedAddress: '192.168.1.5',
-        relatedPort: localPort,
-      }),
+      // Одинаковые кандидаты браузер схлопывает — повторяем это поведение.
+      ...seen.map((port) =>
+        candidate({
+          type: 'srflx',
+          address: '203.0.113.7',
+          port,
+          relatedAddress: '192.168.1.5',
+          relatedPort: localPort,
+        }),
+      ),
     ],
   }
 }
 
 describe('classifyNat', () => {
   it('видит cone NAT, когда оба сервера отчитались об одном внешнем порте', () => {
-    const diagnosis = classifyNat([probe('stun:a', 41234), probe('stun:b', 41234)])
+    const diagnosis = classifyNat(probe([41234, 41234]))
     expect(diagnosis.verdict).toBe('cone')
     expect(diagnosis.directLikely).toBe(true)
   })
 
   it('ловит symmetric NAT по разным внешним портам с одного локального', () => {
-    const diagnosis = classifyNat([probe('stun:a', 41234), probe('stun:b', 41999)])
+    const diagnosis = classifyNat(probe([41234, 41999]))
     expect(diagnosis.verdict).toBe('symmetric')
     expect(diagnosis.directLikely).toBe(false)
     expect(diagnosis.reason.key).toBe('nat.symmetric.reason')
   })
 
-  it('не путает разные локальные порты с symmetric NAT', () => {
-    // Два разных локальных сокета законно получают разные внешние порты даже
-    // на cone NAT — сравнивать можно только пробы с общим базовым адресом.
-    const diagnosis = classifyNat([probe('stun:a', 41234, 54321), probe('stun:b', 41999, 54999)])
-    expect(diagnosis.verdict).not.toBe('symmetric')
+  it('не путает разные локальные сокеты с symmetric NAT', () => {
+    // Разные сокеты законно получают разные внешние порты и на обычном NAT.
+    // Именно поэтому проба обязана опрашивать все серверы одним соединением.
+    const mixed: StunProbe = {
+      servers: 2,
+      candidates: [
+        candidate({
+          type: 'srflx',
+          address: '203.0.113.7',
+          port: 41234,
+          relatedAddress: '192.168.1.5',
+          relatedPort: 54321,
+        }),
+        candidate({
+          type: 'srflx',
+          address: '203.0.113.7',
+          port: 41999,
+          relatedAddress: '192.168.1.5',
+          relatedPort: 54999,
+        }),
+      ],
+    }
+    expect(classifyNat(mixed).verdict).not.toBe('symmetric')
   })
 
   it('видит отсутствие NAT, когда внешний адрес совпал с локальным', () => {
     const open: StunProbe = {
-      server: 'stun:a',
+      servers: 2,
       candidates: [
         candidate({ type: 'host', address: '203.0.113.7', port: 54321 }),
         candidate({
@@ -61,49 +86,46 @@ describe('classifyNat', () => {
         }),
       ],
     }
-    expect(classifyNat([open, { ...open, server: 'stun:b' }]).verdict).toBe('open')
+    expect(classifyNat(open).verdict).toBe('open')
   })
 
   it('сообщает про заблокированный UDP, когда ни один STUN не ответил', () => {
-    const blocked: StunProbe = {
-      server: 'stun:a',
-      candidates: [candidate({ type: 'host' })],
-    }
-    const diagnosis = classifyNat([blocked, { ...blocked, server: 'stun:b' }])
+    const blocked: StunProbe = { servers: 2, candidates: [candidate({ type: 'host' })] }
+    const diagnosis = classifyNat(blocked)
     expect(diagnosis.verdict).toBe('blocked')
     expect(diagnosis.directLikely).toBe(false)
     expect(diagnosis.reason.key).toBe('nat.blocked.reason')
   })
 
-  it('честно говорит unknown, когда проба всего одна', () => {
-    // По одному серверу отличить cone от symmetric невозможно — врать нельзя.
-    expect(classifyNat([probe('stun:a', 41234)]).verdict).toBe('unknown')
+  it('честно говорит unknown, когда ответил один сервер', () => {
+    // По одному серверу отличить обычный NAT от symmetric невозможно.
+    expect(classifyNat(probe([41234], 54321, 1)).verdict).toBe('unknown')
   })
 
-  it('честно говорит unknown на пустом вводе', () => {
-    expect(classifyNat([]).verdict).toBe('unknown')
+  it('честно говорит unknown, когда проверка не проводилась', () => {
+    expect(classifyNat({ servers: 0, candidates: [] }).verdict).toBe('unknown')
   })
 
   it('не обещает успех по своей стороне: исход решает пара роутеров', () => {
     // Даже с идеальным NAT у нас собеседник может оказаться за symmetric,
     // а фильтрацию (RFC 5780) браузер померить не даёт вовсе.
-    const cone = classifyNat([probe('stun:a', 41234), probe('stun:b', 41234)])
+    const cone = classifyNat(probe([41234, 41234]))
     expect(cone.conclusive).toBe(false)
     // Пояснение к cone — отдельный ключ, а не пересказ «открытого» вывода;
     // за честность самой формулировки отвечают тесты словаря в tests/i18n.
     expect(cone.reason.key).toBe('nat.cone.reason')
     expect(cone.reason.key).not.toBe('nat.open.reason')
 
-    const symmetric = classifyNat([probe('stun:a', 41234), probe('stun:b', 41999)])
+    const symmetric = classifyNat(probe([41234, 41999]))
     expect(symmetric.conclusive).toBe(false)
   })
 
   it('считает окончательными только выводы, не зависящие от второй стороны', () => {
-    const blocked: StunProbe = { server: 'stun:a', candidates: [candidate({ type: 'host' })] }
-    expect(classifyNat([blocked, { ...blocked, server: 'stun:b' }]).conclusive).toBe(true)
+    const blocked: StunProbe = { servers: 2, candidates: [candidate({ type: 'host' })] }
+    expect(classifyNat(blocked).conclusive).toBe(true)
 
     const open: StunProbe = {
-      server: 'stun:a',
+      servers: 2,
       candidates: [
         candidate({
           type: 'srflx',
@@ -114,11 +136,16 @@ describe('classifyNat', () => {
         }),
       ],
     }
-    expect(classifyNat([open, { ...open, server: 'stun:b' }]).conclusive).toBe(true)
+    expect(classifyNat(open).conclusive).toBe(true)
   })
 
   it('всегда даёт непустой ключ пояснения', () => {
-    for (const probes of [[], [probe('stun:a', 1)], [probe('stun:a', 1), probe('stun:b', 2)]]) {
+    const inputs: StunProbe[] = [
+      { servers: 0, candidates: [] },
+      probe([41234], 54321, 1),
+      probe([41234, 41999]),
+    ]
+    for (const probes of inputs) {
       // Пустой ключ переводчик отдал бы обратно пустой строкой — интерфейс
       // остался бы без объяснения вывода вовсе.
       expect(classifyNat(probes).reason.key.length).toBeGreaterThan(0)

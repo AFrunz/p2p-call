@@ -30,6 +30,9 @@ import { StatsCollector, createConnection, waitForGathering } from './peer.js'
 import type { CallStats } from './peer.js'
 import { attachAll, detectTransformSupport } from './transform.js'
 
+/** Сколько ждём установки соединения, прежде чем признать провал. */
+const CONNECT_TIMEOUT_MS = 25_000
+
 export type Phase =
   | 'idle'
   | 'preparing'
@@ -139,6 +142,7 @@ export class CallSession {
   private readonly stats = new StatsCollector()
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private ratchetTimer: ReturnType<typeof setInterval> | null = null
+  private watchdog: ReturnType<typeof setTimeout> | null = null
   private restarted = false
 
   constructor(private options: SessionOptions) {}
@@ -243,10 +247,12 @@ export class CallSession {
         await waitForGathering(connection)
 
         this.patch({ phase: 'connecting', outgoingCode: await this.buildCode('responder') })
+        this.startWatchdog()
       } else {
         if (envelope.role !== 'responder') throw new SessionError('session.wrongCodeRole')
         await this.connection.setRemoteDescription({ type: 'answer', sdp: envelope.sdp })
         this.patch({ phase: 'connecting' })
+        this.startWatchdog()
       }
 
       await this.establishKeys()
@@ -351,6 +357,7 @@ export class CallSession {
       }
 
       this.patch({ phase: 'connecting' })
+      this.startWatchdog()
       await this.establishKeys()
     } catch (error) {
       this.fail(describe(error))
@@ -392,14 +399,19 @@ export class CallSession {
 
   private async onConnectionState(state: RTCPeerConnectionState): Promise<void> {
     if (state === 'connected') {
+      this.stopWatchdog()
       this.patch({ phase: 'connected', error: null })
       this.startTimers()
       return
     }
 
     if (state === 'failed') {
-      // Маппинги NAT могли смениться — одна автоматическая попытка оправдана.
-      if (!this.restarted && this.connection !== null && this.view.role === 'initiator') {
+      this.stopWatchdog()
+
+      // Рестарт ICE имеет смысл только там, где новый offer есть кому
+      // доставить. В режиме кодов сигналинга нет: раньше мы молча отправляли
+      // его в никуда и возвращались, оставляя пользователя без ответа.
+      if (!this.restarted && this.connection !== null && this.signaling !== null && this.view.role === 'initiator') {
         this.restarted = true
         try {
           await this.connection.setLocalDescription(
@@ -479,6 +491,26 @@ export class CallSession {
     return attachAll(this.worker, this.connection, this.keys)
   }
 
+  /**
+   * Сторожевой таймер на установку соединения.
+   *
+   * ICE умеет застревать в `checking` десятками секунд и не всегда доходит до
+   * `failed`. Без таймера пользователь смотрит на «устанавливаем соединение»
+   * бесконечно и не получает ни ответа, ни кнопки следующего шага.
+   */
+  private startWatchdog(): void {
+    this.stopWatchdog()
+    this.watchdog = setTimeout(() => {
+      if (this.view.phase === 'connected') return
+      this.fail(unreachableMessage(this.view.network), true)
+    }, CONNECT_TIMEOUT_MS)
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdog !== null) clearTimeout(this.watchdog)
+    this.watchdog = null
+  }
+
   private startTimers(): void {
     this.statsTimer ??= setInterval(() => {
       if (this.connection === null) return
@@ -546,6 +578,7 @@ export class CallSession {
   }
 
   private teardown(): void {
+    this.stopWatchdog()
     if (this.statsTimer !== null) clearInterval(this.statsTimer)
     if (this.ratchetTimer !== null) clearInterval(this.ratchetTimer)
     this.statsTimer = null
