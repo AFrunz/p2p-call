@@ -261,6 +261,5 @@ export const ru: Record<string, string> = {
   'ended.lost.title': 'Связь оборвалась',
   'ended.lost.note': 'Соединение пропало без предупреждения: собеседник мог закрыть вкладку или потерять сеть. Прощания мы не получили.',
   'ended.duration': 'Разговор длился {value}',
-  'ended.again': 'Позвонить снова',
   'ended.back': 'На главную',
 }

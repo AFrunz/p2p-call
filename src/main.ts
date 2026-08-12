@@ -830,12 +830,8 @@ function wire(): void {
     session = null
     lastPhase = null
     screen('screen-home')
-  })
-
-  on('action-call-again', 'click', () => {
-    session = null
-    lastPhase = null
-    screen('screen-home')
+    // Заодно открываем ту вкладку, с которой звонок и начинался: без сервера
+    // это обмен кодами, с сервером — ссылка.
     setTab(settings.signalingServer === null ? 'direct' : 'server')
   })
   on('action-hangup', 'click', () => {

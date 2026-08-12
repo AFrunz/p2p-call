@@ -251,6 +251,5 @@ export const en: Record<string, string> = {
   'ended.lost.title': 'The connection dropped',
   'ended.lost.note': 'The connection disappeared without warning: the other side may have closed the tab or lost the network. No goodbye arrived.',
   'ended.duration': 'The call lasted {value}',
-  'ended.again': 'Call again',
   'ended.back': 'Home',
 }
