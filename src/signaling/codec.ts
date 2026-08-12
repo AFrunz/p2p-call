@@ -18,6 +18,17 @@ const ROLE_BY_CODE: Record<number, Role> = { 0: 'initiator', 1: 'responder' }
 
 const BASE64URL_RE = /^[A-Za-z0-9_-]*$/
 
+/**
+ * Алфавит кода подключения — base32 (RFC 4648).
+ *
+ * Не base64url: там есть `_` и `-`, а мессенджеры и поля с разметкой съедают
+ * `__текст__` как форматирование. Код рассылают любым каналом, поэтому в нём
+ * не должно быть ни одного символа, который где-то что-то значит. Плата —
+ * примерно четверть длины.
+ */
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+const BASE32_RE = /^[A-Z2-7]*$/
+
 export class CodeFormatError extends Error {
   constructor(
     message: string,
@@ -72,7 +83,7 @@ export async function encodeEnvelope(envelope: Envelope): Promise<string> {
   view.setUint32(4 + PUBLIC_KEY_BYTES, sdp.length)
   raw.set(sdp, HEADER_BYTES)
 
-  return toBase64Url(await deflate(raw))
+  return toBase32(await deflate(raw))
 }
 
 /** Разбирает код подключения. Кидает CodeFormatError на любом мусоре. */
@@ -84,7 +95,7 @@ export async function decodeEnvelope(code: string): Promise<Envelope> {
 
   let raw: Uint8Array
   try {
-    raw = await inflate(fromBase64Url(normalized))
+    raw = await inflate(fromBase32(normalized))
   } catch {
     throw new CodeFormatError('код повреждён или это вообще не код подключения', 'malformed')
   }
@@ -126,6 +137,45 @@ export function normalizeCode(raw: string): string {
   const hash = raw.lastIndexOf('#')
   const tail = hash >= 0 ? raw.slice(hash + 1) : raw
   return tail.replace(/\s+/g, '')
+}
+
+export function toBase32(bytes: Uint8Array): string {
+  let value = 0
+  let bits = 0
+  let out = ''
+
+  for (const byte of bytes) {
+    value = (value << 8) | byte
+    bits += 8
+    while (bits >= 5) {
+      out += BASE32[(value >>> (bits - 5)) & 31]
+      bits -= 5
+    }
+  }
+  if (bits > 0) out += BASE32[(value << (5 - bits)) & 31]
+  return out
+}
+
+export function fromBase32(text: string): Bytes {
+  // Регистр не важен: код могли пропустить через что-нибудь, что его меняет.
+  const clean = text.toUpperCase()
+  if (!BASE32_RE.test(clean)) {
+    throw new CodeFormatError('в коде есть символы не из алфавита', 'malformed')
+  }
+
+  const out: number[] = []
+  let value = 0
+  let bits = 0
+
+  for (const symbol of clean) {
+    value = (value << 5) | BASE32.indexOf(symbol)
+    bits += 5
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 255)
+      bits -= 8
+    }
+  }
+  return new Uint8Array(out)
 }
 
 export function toBase64Url(bytes: Uint8Array): string {

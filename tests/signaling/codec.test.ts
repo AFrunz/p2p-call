@@ -5,8 +5,10 @@ import {
   PUBLIC_KEY_BYTES,
   decodeEnvelope,
   encodeEnvelope,
+  fromBase32,
   fromBase64Url,
   normalizeCode,
+  toBase32,
   toBase64Url,
 } from '../../src/signaling/codec.js'
 import type { Bytes } from '../../src/bytes.js'
@@ -44,6 +46,32 @@ describe('base64url', () => {
   })
 })
 
+describe('base32', () => {
+  it('переживает round-trip на всех остатках по модулю 5', () => {
+    for (const length of [0, 1, 2, 3, 4, 5, 6, 7, 8, 64, 65, 255]) {
+      const bytes = new Uint8Array(length).map((_, i) => (i * 29) % 256)
+      expect(fromBase32(toBase32(bytes)), `длина ${length}`).toEqual(bytes)
+    }
+  })
+
+  it('не использует символов, которые где-то что-то значат', () => {
+    // Код рассылают любым каналом. base64url отпадает из-за `_`: разметка
+    // съедает `__текст__` как форматирование, и код приходит покалеченным.
+    const encoded = toBase32(new Uint8Array(64).map((_, i) => i * 3))
+    expect(encoded).toMatch(/^[A-Z2-7]+$/)
+  })
+
+  it('не обращает внимания на регистр', () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5])
+    expect(fromBase32(toBase32(bytes).toLowerCase())).toEqual(bytes)
+  })
+
+  it('отвергает посторонние символы', () => {
+    expect(() => fromBase32('AAAA_AAA')).toThrow(CodeFormatError)
+    expect(() => fromBase32('AAAA1AAA')).toThrow(CodeFormatError)
+  })
+})
+
 describe('normalizeCode', () => {
   it('переживает переносы строк и пробелы от копипаста через мессенджер', () => {
     const clean = 'AbCd0123_-xyz'
@@ -77,14 +105,15 @@ describe('encodeEnvelope / decodeEnvelope', () => {
 
   it('сжимает реальный SDP до размера, влезающего в QR-код', async () => {
     const code = await encodeEnvelope(envelope())
-    // Порог с запасом: QR byte-mode вмещает заметно больше, но за ростом кода
-    // надо следить — иначе сканирование с телефона станет мучением.
-    expect(code.length).toBeLessThan(1200)
+    // Порог с запасом: base32 длиннее base64 примерно на четверть, но зато
+    // переживает пересылку через что угодно. За ростом всё равно следим —
+    // иначе сканирование QR с телефона станет мучением.
+    expect(code.length).toBeLessThan(1500)
   })
 
   it('отдаёт код только из безопасного алфавита', async () => {
     const code = await encodeEnvelope(envelope())
-    expect(code).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(code).toMatch(/^[A-Z2-7]+$/)
   })
 
   it('отвергает публичный ключ неверной длины', async () => {
