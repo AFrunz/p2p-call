@@ -219,6 +219,25 @@
           <button class="icon-button" id="action-qr-code"><i data-lucide="qr-code"></i></button>
         </div>
         <canvas id="qr-code-canvas" class="qr" hidden></canvas>
+
+        <div id="answer-sent" hidden>
+          <p class="hint" data-i18n="exchange.sentHint">
+            Времени не ограничено: подключение начнётся, когда вы нажмёте кнопку.
+            Сначала вставьте код на втором устройстве.
+          </p>
+          <button class="button button--primary" id="action-answer-sent" data-i18n="exchange.sent">
+            Код вставлен на другом устройстве
+          </button>
+        </div>
+
+        <div id="answer-refresh" hidden>
+          <p class="hint" data-i18n="exchange.answerWindow">
+            Не успели — обновите код и отправьте новый.
+          </p>
+          <button class="button" id="action-refresh-answer" data-i18n="exchange.refresh">
+            Обновить код
+          </button>
+        </div>
       </div>
 
       <div class="card">

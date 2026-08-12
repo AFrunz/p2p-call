@@ -35,6 +35,7 @@ import {
   extractFingerprint,
   insertCandidates,
   parseCandidateLine,
+  stripCandidates,
 } from '../signaling/sdp.js'
 import type { Role } from '../signaling/types.js'
 import type { QualityPreset } from '../media/quality.js'
@@ -182,6 +183,8 @@ export class CallSession {
   private gathered: string[] = []
   /** Приглашение собеседника: по нему пересобираем ответ, если ICE отвалился. */
   private pendingOffer: string | null = null
+  /** Кандидаты собеседника, придержанные до готовности человека. */
+  private heldCandidates: string[] = []
   private refreshes = 0
   private restarted = false
   /** Соединение хоть раз состоялось: обрыв после этого — не «не удалось подключиться». */
@@ -207,6 +210,16 @@ export class CallSession {
 
   get phase(): Phase {
     return this.view.phase
+  }
+
+  /** Ждём ли нажатия «код вставлен»: кандидаты придержаны, проверка не начата. */
+  get isHoldingCandidates(): boolean {
+    return this.heldCandidates.length > 0
+  }
+
+  /** Есть ли что обновлять: приглашение сохранено и мы отвечающая сторона. */
+  get canRefreshAnswer(): boolean {
+    return this.pendingOffer !== null && this.view.role === 'responder' && this.signaling === null
   }
 
   get media(): { local: MediaStream | null; remote: MediaStream } {
@@ -320,7 +333,14 @@ export class CallSession {
         const connection = this.connection!
 
         this.pendingOffer = envelope.sdp
-        await connection.setRemoteDescription({ type: 'offer', sdp: envelope.sdp })
+
+        // Кандидатов собеседника придерживаем: без них парам не из чего
+        // строиться, ICE не начинает проверку и не сдаётся через полминуты,
+        // пока человек несёт код на второе устройство.
+        const held = this.signaling === null ? stripCandidates(envelope.sdp) : null
+        this.heldCandidates = held?.candidates ?? []
+
+        await connection.setRemoteDescription({ type: 'offer', sdp: held?.sdp ?? envelope.sdp })
         await connection.setLocalDescription(await connection.createAnswer())
         await waitForGathering(connection)
 
@@ -573,17 +593,42 @@ export class CallSession {
   }
 
   /**
+   * Отдаёт придержанных кандидатов и запускает проверку пар.
+   *
+   * Нажимается человеком, когда код уже вставлен на втором устройстве, — то
+   * есть ровно тогда, когда собеседник готов отвечать на проверки.
+   */
+  async startChecking(): Promise<void> {
+    const connection = this.connection
+    const held = this.heldCandidates
+    if (connection === null || held.length === 0) return
+
+    this.heldCandidates = []
+    for (const candidate of held) {
+      try {
+        await connection.addIceCandidate({ candidate, sdpMLineIndex: 0 })
+      } catch {
+        // Один непринятый кандидат не повод бросать остальные.
+      }
+    }
+    this.patch({ phase: 'connecting' })
+  }
+
+  /**
    * Пересобирает ответ на то же приглашение с новыми ICE-данными.
    *
    * Возвращает true, если получилось: тогда в интерфейсе появляется свежий код
    * взамен протухшего, и обмен можно закончить спокойно.
    */
-  private async refreshAnswer(): Promise<boolean> {
+  async refreshAnswer(manual = false): Promise<boolean> {
     const offer = this.pendingOffer
     if (offer === null || this.signaling !== null) return false
-    if (this.view.role !== 'responder' || this.refreshes >= MAX_ANSWER_REFRESH) return false
+    if (this.view.role !== 'responder') return false
+    // Лимит только для автоматических попыток: нажатие человека — это уже
+    // осознанное решение, ограничивать его незачем.
+    if (!manual && this.refreshes >= MAX_ANSWER_REFRESH) return false
 
-    this.refreshes++
+    if (!manual) this.refreshes++
     try {
       this.connection?.close()
       this.worker?.terminate()
@@ -594,7 +639,10 @@ export class CallSession {
       await this.openConnection('responder')
       const connection = this.connection!
 
-      await connection.setRemoteDescription({ type: 'offer', sdp: offer })
+      const held = stripCandidates(offer)
+      this.heldCandidates = held.candidates
+
+      await connection.setRemoteDescription({ type: 'offer', sdp: held.sdp })
       await connection.setLocalDescription(await connection.createAnswer())
       await waitForGathering(connection)
 

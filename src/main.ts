@@ -452,6 +452,12 @@ function render(view: SessionView): void {
   // копирует код уже уничтоженной сессии и удивляется, почему не соединяется.
   el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode ?? ''
   show('outgoing-block', view.outgoingCode !== null)
+  // Кнопки под ответным кодом: пока кандидаты придержаны, подключение ещё не
+  // начиналось и торопиться некуда.
+  const answering = view.role === 'responder' && view.outgoingCode !== null
+  show('answer-sent', answering && (session?.isHoldingCandidates ?? false))
+  show('answer-refresh', answering && !(session?.isHoldingCandidates ?? false))
+
   if (view.outgoingCode !== null) {
     // Длина рядом с кодом — чтобы обе стороны могли сверить её глазами:
     // выделение мышью в прокрученном поле теряет хвост незаметно.
@@ -852,6 +858,25 @@ function wire(): void {
       'incoming-label',
       length === 0 ? t('exchange.peerCode') : `${t('exchange.peerCode')} · ${t('exchange.chars', { count: length })}`,
     )
+  })
+
+  on('action-answer-sent', 'click', () => {
+    void withBusy('action-answer-sent', 'exchange.connecting', async () => {
+      await session?.startChecking()
+      show('answer-sent', false)
+      show('answer-refresh', true)
+    })
+  })
+
+  on('action-refresh-answer', 'click', () => {
+    void withBusy('action-refresh-answer', 'exchange.connecting', async () => {
+      const ok = await session?.refreshAnswer(true)
+      if (ok === true) {
+        toast(t('exchange.refreshed'))
+        show('answer-sent', true)
+        show('answer-refresh', false)
+      }
+    })
   })
 
   on('action-copy-code', 'click', () => {

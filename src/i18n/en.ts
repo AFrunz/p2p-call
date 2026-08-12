@@ -258,4 +258,9 @@ export const en: Record<string, string> = {
   'exchange.chars': '{count} characters',
   'call.peerMicOff': "the other person's microphone is off",
   'session.answerRefreshed': 'The previous reply code expired while you were carrying it over. Send the new one from the field above.',
+  'exchange.answerWindow': 'If you missed the window, refresh the code and send the new one.',
+  'exchange.refresh': 'Refresh the code',
+  'exchange.refreshed': 'Code refreshed — send this one.',
+  'exchange.sentHint': 'There is no time limit: connecting starts only when you press the button. Paste the code on the other device first.',
+  'exchange.sent': 'I pasted it on the other device',
 }

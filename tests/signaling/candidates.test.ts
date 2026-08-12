@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countCandidates, insertCandidates } from '../../src/signaling/sdp.js'
+import { countCandidates, insertCandidates, stripCandidates } from '../../src/signaling/sdp.js'
 import { OFFER_SDP } from '../fixtures/sdp.js'
 
 const BARE = [
@@ -80,5 +80,34 @@ describe('insertCandidates', () => {
 
   it('переживает SDP без медиасекций', () => {
     expect(insertCandidates('v=0\r\ns=-\r\n', LINES)).toBe('v=0\r\ns=-\r\n')
+  })
+})
+
+describe('stripCandidates', () => {
+  it('вынимает кандидатов и оставляет остальное нетронутым', () => {
+    const { sdp, candidates } = stripCandidates(OFFER_SDP)
+
+    expect(candidates).toHaveLength(3)
+    expect(countCandidates(sdp)).toBe(0)
+    expect(sdp).toContain('a=ice-ufrag:4ZcD')
+    expect(sdp).toContain('m=video')
+  })
+
+  it('отдаёт строки без префикса a=, как их ждёт addIceCandidate', () => {
+    for (const line of stripCandidates(OFFER_SDP).candidates) {
+      expect(line.startsWith('candidate:')).toBe(true)
+    }
+  })
+
+  it('переживает SDP без кандидатов', () => {
+    const { sdp, candidates } = stripCandidates(BARE)
+    expect(candidates).toEqual([])
+    expect(sdp).toBe(BARE)
+  })
+
+  it('складывается обратно без потерь', () => {
+    // Вынули, подождали человека, вернули — SDP должен остаться рабочим.
+    const { sdp, candidates } = stripCandidates(OFFER_SDP)
+    expect(countCandidates(insertCandidates(sdp, candidates))).toBe(3)
   })
 })

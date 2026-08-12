@@ -143,3 +143,23 @@ export function insertCandidates(sdp: string, candidates: readonly string[]): st
   lines.splice(at, 0, ...normalized)
   return lines.join(eol)
 }
+
+/**
+ * Вынимает кандидатов из SDP, оставляя всё остальное.
+ *
+ * Нужно, чтобы отвечающая сторона могла подготовить ответ, но не начинать
+ * проверку пар: без удалённых кандидатов парам не из чего строиться, и ICE не
+ * сдаётся через полминуты, пока человек переносит код.
+ */
+export function stripCandidates(sdp: string): { sdp: string; candidates: string[] } {
+  const candidates: string[] = []
+  const kept: string[] = []
+
+  for (const line of sdp.split(/\r?\n/)) {
+    if (line.trim().startsWith('a=candidate:')) candidates.push(line.trim().replace(/^a=/, ''))
+    else kept.push(line)
+  }
+
+  const eol = sdp.includes('\r\n') ? '\r\n' : '\n'
+  return { sdp: kept.join(eol), candidates }
+}
