@@ -1,0 +1,192 @@
+/**
+ * Английский перевод. Набор ключей обязан совпадать с `ru.ts` — это проверяется
+ * тестом, потому что забытый ключ иначе всплывает уже в интерфейсе.
+ */
+export const en: Record<string, string> = {
+  // --- главный экран --------------------------------------------------------
+  'home.title': 'Encrypted call',
+  'home.subtitle':
+    'The conversation goes directly between two browsers. The keys never leave your devices.',
+  'home.settings': 'Settings',
+
+  'preview.off': 'Camera and microphone are off',
+
+  'devices.camera': 'Camera',
+  'devices.microphone': 'Microphone',
+  'devices.default': 'Default',
+  'devices.cameraFallback': 'Camera {index}',
+  'devices.microphoneFallback': 'Microphone {index}',
+
+  'tabs.direct': 'Direct',
+  'tabs.server': 'Via server',
+
+  // --- вкладка «Напрямую» ---------------------------------------------------
+  'verdict.pending.title': 'Checking the network',
+  'verdict.pending.note': 'Querying two STUN servers, this takes a couple of seconds.',
+  'verdict.open.title': 'Direct connection is available',
+  'verdict.cone.title': 'Nothing blocks you on your side',
+  'verdict.symmetric.title': 'Your router gets in the way',
+  'verdict.blocked.title': 'UDP is blocked',
+  'verdict.unknown.title': 'Could not determine the network',
+
+  'checks.stun.title': 'STUN servers',
+  'checks.stun.value': '{answered} of {total} responded',
+  'checks.udp.title': 'Outbound UDP',
+  'checks.udp.ok': 'passes',
+  'checks.udp.blocked': 'blocked',
+  'checks.ipv6.title': 'IPv6',
+  'checks.ipv6.present': 'available, NAT is not in the way',
+  'checks.ipv6.absent': 'unavailable, IPv4 only',
+
+  'passphrase.label': 'Shared phrase',
+  'passphrase.unset': 'not set',
+  'passphrase.set': 'set',
+
+  'direct.create': 'Create a call',
+  'direct.goServer': 'Set up your own server',
+  'direct.join': 'I have a code',
+
+  // --- вкладка «Через сервер» -----------------------------------------------
+  'server.empty.title': 'No server of your own is connected',
+  'server.empty.note':
+    'Needed when a direct connection does not go through. Deploys with a single command and stays under your control.',
+  'server.empty.b1': 'Joining by link, without exchanging codes',
+  'server.empty.b2': 'Works where NAT cannot be traversed',
+  'server.empty.b3': 'The server sees neither the SDP nor the call keys',
+  'server.ready.status': 'Verified · signaling and TURN respond',
+  'server.add': 'Add a server',
+  'server.start': 'Start a session',
+
+  'link.label': 'Link for the other person',
+  'link.copy': 'Copy',
+  'link.waiting': 'The other person has not joined yet',
+  'link.join': 'Join',
+
+  // --- обмен кодами ---------------------------------------------------------
+  'exchange.title': 'Pass the code to the other person',
+  'exchange.hint': 'Send your code any way you like and paste the one you get back here.',
+  'exchange.joinTitle': 'Paste a code or a link',
+  'exchange.joinHint': 'Both a connection code and an invite link will do — the app will figure it out.',
+  'exchange.yourCode': 'Your code',
+  'exchange.peerCode': "The other person's code",
+  'exchange.placeholder': "Paste the other person's code here",
+  'exchange.connect': 'Connect',
+
+  // --- экран звонка ---------------------------------------------------------
+  'call.peerCameraOff': 'The other person turned the camera off',
+  'call.e2ee': 'end-to-end encryption',
+  'call.sasLabel': 'Read the phrase out loud to compare',
+  'call.sasOk': 'It matches',
+  'call.hangUp': 'Hang up',
+  'call.you': 'you',
+
+  'controls.micUnavailable': 'Microphone is unavailable',
+  'controls.camUnavailable': 'Camera is unavailable',
+
+  'stats.outbound': 'Outbound',
+  'stats.inbound': 'Inbound',
+  'stats.latency': 'Latency',
+  'stats.loss': 'Loss',
+  'stats.resolution': 'Resolution',
+
+  // --- настройки ------------------------------------------------------------
+  'settings.title': 'Settings',
+  'settings.server': 'SIGNALING SERVER',
+  'settings.address': 'Address',
+  'settings.check': 'Check',
+  'settings.remove': 'Remove',
+  'settings.serverHint':
+    'The server is only needed when a direct connection does not go through. See DEPLOY.md in the repository for how to deploy it.',
+  'settings.language': 'LANGUAGE',
+  'settings.save': 'Save',
+  'settings.error.empty': 'Enter the address of the signaling server.',
+  'settings.error.insecure': 'Unencrypted ws:// is allowed on localhost only. Use wss://',
+  'settings.error.scheme': 'The address must start with wss:// — for example, wss://call.example.com/ws',
+
+  'quality.auto': 'Automatic',
+  'quality.360p': '360p — light',
+  'quality.720p': '720p — normal',
+  'quality.1080p': '1080p — maximum',
+
+  // --- камера и микрофон (src/call/media.ts) --------------------------------
+  'media.insecure':
+    'The browser hands over the camera only over HTTPS or on localhost. For now you can only watch and listen.',
+  'media.denied':
+    'The browser did not let us reach the camera and microphone. Check the permission in the address bar, and on macOS also the browser access to the camera in system settings.',
+  'media.absent':
+    'Neither a camera nor a microphone was found. Make sure the device is plugged in and not disabled in the system.',
+  'media.overconstrained':
+    'The selected device is no longer available. Open settings and pick the camera and microphone again.',
+  'media.busy':
+    'The camera or microphone is busy in another program. Close it — on Windows that is usually Zoom or Teams — and try again.',
+  'media.unsupported': 'This browser cannot provide a camera and microphone.',
+  'media.unknown': 'Could not get the camera and microphone.',
+  'media.deviceCount': 'The browser sees {cameras} camera(s) and {microphones} microphone(s).',
+  'media.missing.both': 'There is no camera and no microphone — you will join in watch-only mode.',
+  'media.missing.video': 'The camera is unavailable — the other person will only hear you.',
+  'media.missing.audio': 'The microphone is unavailable — the other person will only see you.',
+
+  // --- диагностика NAT (src/net/nat.ts) ------------------------------------
+  'nat.pending.reason': 'The network has not been checked yet.',
+  'nat.blocked.reason':
+    'Not a single STUN server responded: UDP appears to be blocked on this network. A direct connection will not work with anyone — a relay server is required.',
+  'nat.open.reason':
+    'You have a public address with no NAT. Nothing blocks you on your side: anyone can reach you, whatever their router.',
+  'nat.cone.reason':
+    'Your NAT keeps the external port — nothing blocks you on your side. Whether the connection works also depends on the router of the other person.',
+  'nat.symmetric.reason':
+    'Your router hands out a new external port for every peer (symmetric NAT). With the same kind of router on the other side a direct connection will not work at all, with an ordinary one it is a matter of luck. This cannot be checked in advance: it takes an attempt.',
+  'nat.unknown.reason':
+    'Only one STUN server responded: a single probe cannot tell an ordinary NAT from a symmetric one.',
+
+  // --- состояние соединения (src/ui/format.ts) -----------------------------
+  'connection.local': 'direct, local network',
+  'connection.direct': 'direct connection',
+  'connection.relay': 'through a relay',
+  'connection.pending': 'connecting…',
+
+  'encryption.e2ee': 'end-to-end encryption',
+  'encryption.transportOnly': 'transport encryption only',
+
+  'format.none': '—',
+  'format.kbps': '{value} kbit/s',
+  'format.mbps': '{value} Mbit/s',
+  'format.ms': '{value} ms',
+
+  // --- ход звонка (src/call/session.ts) ------------------------------------
+  'session.prepareFailed': 'Could not prepare the call.',
+  'session.notReady': 'The connection is not ready yet.',
+  'session.wrongCodeRole': "This is the caller's code, but the answering code is needed.",
+  'session.codeUnreadable': 'The code was not recognised. Check that you copied all of it.',
+  'session.noServer': 'First set the address of your signaling server in the settings.',
+  'session.badLink': 'The invite link was not recognised.',
+  'session.peerLeft': 'The other person disconnected.',
+  'session.peerHungUp': 'The other person ended the call.',
+  'session.signalingClosed': 'The connection to the signaling server was lost.',
+  'session.noFingerprint': 'The SDP has no SHA-256 fingerprint: it is not safe to continue.',
+  'session.unknownError': 'Unknown error.',
+  'session.unreachable':
+    'Could not establish a direct connection. Try switching from mobile internet to Wi-Fi, turning off the VPN — or deploying your own server, one of you is enough.',
+  'session.unreachable.symmetric':
+    'Your router hands out a new external port for every peer (symmetric NAT).',
+  'session.unreachable.blocked': 'UDP is blocked on your network.',
+
+  // --- сигналинг (src/signaling/client.ts) ---------------------------------
+  'signaling.unreachable': 'Could not reach the signaling server.',
+  'signaling.tampered':
+    'The message from the other person failed authentication. Make sure you both opened the same link.',
+  'signaling.roomFull': 'This room already has two participants. Create a new link.',
+  'signaling.rateLimited': 'The server limited the message rate and closed the connection.',
+  'signaling.serverError': 'The server is overloaded: too many active rooms.',
+
+  // --- уведомления ----------------------------------------------------------
+  'toast.codeCopied': 'Code copied.',
+  'toast.linkCopied': 'Link copied.',
+  'toast.copyFailed': 'Copy it by hand: the clipboard is unavailable.',
+  'toast.pasteCode': "Paste the other person's code.",
+  'toast.qrFailed': 'Could not build the QR code — it is too long.',
+  'toast.settingsSaved': 'Settings saved.',
+  'toast.savedDeviceGone': 'The saved device is no longer connected — we took what is available.',
+  'notice.noFrameEncryption':
+    'This browser does not support end-to-end frame encryption. The call will be protected by the standard WebRTC transport encryption only.',
+}

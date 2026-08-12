@@ -19,6 +19,7 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
+    "lucide": "^0.468.0",
     "qrcode": "^1.5.4"
   }
 }

@@ -55,6 +55,8 @@ export interface SessionView {
   network: NetworkReport | null
   stats: CallStats | null
   peerMuted: { audio: boolean; video: boolean }
+  /** Наше состояние: по умолчанию входим в звонок молча и без картинки. */
+  muted: { audio: boolean; video: boolean }
   /** Есть ли что передавать: без камеры или микрофона кнопки бессмысленны. */
   canSend: { audio: boolean; video: boolean }
   /** Предупреждение, не мешающее звонку, — в отличие от error. */
@@ -92,6 +94,7 @@ export class CallSession {
     network: null,
     stats: null,
     peerMuted: { audio: false, video: false },
+    muted: { audio: true, video: true },
     canSend: { audio: false, video: false },
     notice: null,
     error: null,
@@ -138,6 +141,10 @@ export class CallSession {
       })
       this.localStream = media.stream
       this.keyPair = await generateKeyPair()
+
+      // Входим в звонок молча и без картинки: включить себя — осознанное
+      // действие, а вот случайно оказаться в эфире не должно быть возможно.
+      for (const track of media.stream.getTracks()) track.enabled = false
 
       // Отсутствие устройств не мешает подключиться: без них человек будет
       // смотреть и слушать. Но сказать об этом надо явно.
@@ -457,6 +464,14 @@ export class CallSession {
   }
 
   private bindChannel(channel: RTCDataChannel): void {
+    // Собеседник должен сразу узнать, что мы вошли выключенными, иначе он
+    // будет ждать картинку, которой нет.
+    channel.addEventListener('open', () => {
+      for (const kind of ['audio', 'video'] as const) {
+        this.sendControl({ t: 'mute', kind, muted: this.view.muted[kind] })
+      }
+    })
+
     channel.addEventListener('message', (event) => {
       const message = decodeMessage(String(event.data))
       if (message === null) return
@@ -479,7 +494,13 @@ export class CallSession {
       kind === 'audio' ? this.localStream?.getAudioTracks() : this.localStream?.getVideoTracks()
 
     for (const track of tracks ?? []) track.enabled = !muted
+    this.patch({ muted: { ...this.view.muted, [kind]: muted } })
     this.sendControl({ t: 'mute', kind, muted })
+  }
+
+  /** Текущее состояние своих дорожек — нужно интерфейсу для кнопок. */
+  isMuted(kind: 'audio' | 'video'): boolean {
+    return this.view.muted[kind]
   }
 
   async setQuality(quality: QualityPreset): Promise<void> {

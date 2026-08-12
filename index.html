@@ -3,159 +3,290 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark light" />
-    <title>Зашифрованный видеозвонок</title>
-    <meta name="description" content="Видеозвонки напрямую между двумя участниками со сквозным шифрованием" />
+    <meta name="color-scheme" content="dark" />
+    <title>Зашифрованный звонок</title>
+    <meta
+      name="description"
+      content="Видеозвонки напрямую между двумя участниками со сквозным шифрованием"
+    />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <main class="app">
-      <!-- Экран подготовки: выбор режима -->
-      <section class="screen" id="screen-start" hidden>
-        <header class="screen__head">
-          <h1>Зашифрованный звонок</h1>
-          <p class="muted">
+    <!-- ================= Главный экран ================= -->
+    <main class="app" id="screen-home">
+      <header class="head">
+        <div class="head__titles">
+          <h1 data-i18n="home.title">Зашифрованный звонок</h1>
+          <p class="muted" data-i18n="home.subtitle">
             Разговор идёт напрямую между двумя браузерами. Ключи не покидают ваши устройства.
-            Без камеры и микрофона тоже можно — подключитесь на просмотр.
           </p>
-        </header>
+        </div>
+        <button class="icon-button" id="action-settings" data-i18n-aria="home.settings">
+          <i data-lucide="settings"></i>
+          <span class="icon-button__label" data-i18n="home.settings">Настройки</span>
+        </button>
+      </header>
 
-        <div class="preview">
+      <div class="stage-column">
+        <section class="preview" id="preview">
           <video id="preview-video" autoplay playsinline muted></video>
-          <p class="preview__hint" id="preview-hint">Запрашиваем камеру и микрофон…</p>
-        </div>
-
-        <div id="network-report" class="notice" hidden></div>
-
-        <div class="stack">
-          <button class="button button--primary" id="action-create">Создать звонок</button>
-          <button class="button" id="action-join">У меня есть код или ссылка</button>
-          <button class="button button--ghost" id="action-settings">Настройки</button>
-        </div>
-      </section>
-
-      <!-- Обмен кодами (режим без сервера) -->
-      <section class="screen" id="screen-exchange" hidden>
-        <header class="screen__head">
-          <h2 id="exchange-title">Передайте код собеседнику</h2>
-          <p class="muted" id="exchange-hint"></p>
-        </header>
-
-        <div class="code-block" id="outgoing-block">
-          <label class="label" for="outgoing-code">Ваш код</label>
-          <textarea id="outgoing-code" class="code" readonly rows="4"></textarea>
-          <div class="row">
-            <button class="button" id="action-copy">Скопировать</button>
-            <button class="button button--ghost" id="action-qr">Показать QR</button>
+          <div class="preview__off" id="preview-off">
+            <i data-lucide="video-off"></i>
+            <p id="preview-hint" data-i18n="preview.off">Камера и микрофон выключены</p>
           </div>
-          <canvas id="qr-canvas" class="qr" hidden></canvas>
-        </div>
+          <div class="preview__toggles">
+            <button class="toggle" id="toggle-mic" aria-pressed="false">
+              <i data-lucide="mic-off"></i>
+            </button>
+            <button class="toggle" id="toggle-cam" aria-pressed="false">
+              <i data-lucide="video-off"></i>
+            </button>
+          </div>
+        </section>
 
-        <div class="code-block">
-          <label class="label" for="incoming-code">Код собеседника</label>
-          <textarea
-            id="incoming-code"
-            class="code"
-            rows="4"
-            placeholder="Вставьте сюда код, который вам прислали"
-            autocomplete="off"
-            spellcheck="false"
-          ></textarea>
-          <button class="button button--primary" id="action-accept">Подключиться</button>
+        <div class="devices">
+          <label class="device">
+            <i data-lucide="video"></i>
+            <select id="select-camera" data-i18n-aria="devices.camera"></select>
+            <i data-lucide="chevron-down" class="device__chevron"></i>
+          </label>
+          <label class="device">
+            <i data-lucide="mic"></i>
+            <select id="select-microphone" data-i18n-aria="devices.microphone"></select>
+            <i data-lucide="chevron-down" class="device__chevron"></i>
+          </label>
         </div>
-      </section>
+      </div>
 
-      <!-- Ссылка-приглашение (режим со своим сервером) -->
-      <section class="screen" id="screen-invite" hidden>
-        <header class="screen__head">
-          <h2>Отправьте ссылку собеседнику</h2>
-          <p class="muted">
-            Как только он её откроет, звонок начнётся сам. Секрет комнаты находится после решётки
-            и на сервер не отправляется.
+      <div class="side-column">
+        <nav class="tabs" role="tablist">
+          <button class="tab is-active" id="tab-direct" role="tab" aria-selected="true" data-i18n="tabs.direct">
+            Напрямую
+          </button>
+          <button class="tab" id="tab-server" role="tab" aria-selected="false" data-i18n="tabs.server">
+            Через сервер
+          </button>
+        </nav>
+
+        <!-- ---------- Вкладка «Напрямую» ---------- -->
+        <section class="panel" id="panel-direct" role="tabpanel">
+          <div class="verdict" id="verdict" data-state="pending">
+            <i data-lucide="loader-circle" id="verdict-icon"></i>
+            <div>
+              <strong id="verdict-title" data-i18n="verdict.pending.title">Проверяем сеть</strong>
+              <p id="verdict-note" data-i18n="verdict.pending.note">
+                Опрашиваем два STUN-сервера, это занимает пару секунд.
+              </p>
+            </div>
+          </div>
+
+          <ul class="checks" id="checks"></ul>
+
+          <div class="grow"></div>
+
+          <button class="row" id="action-passphrase">
+            <i data-lucide="key-round"></i>
+            <span data-i18n="passphrase.label">Общая фраза</span>
+            <span class="row__value" id="passphrase-value" data-i18n="passphrase.unset">не задана</span>
+            <i data-lucide="chevron-right"></i>
+          </button>
+
+          <button class="button button--primary" id="action-create-code" data-i18n="direct.create">
+            Создать звонок
+          </button>
+          <button class="button button--primary" id="action-goto-server" hidden data-i18n="direct.goServer">
+            Настроить свой сервер
+          </button>
+          <button class="button button--ghost" id="action-open-join" data-i18n="direct.join">
+            У меня есть код
+          </button>
+        </section>
+
+        <!-- ---------- Вкладка «Через сервер» ---------- -->
+        <section class="panel" id="panel-server" role="tabpanel" hidden>
+          <!-- состояние: сервер не добавлен -->
+          <div class="card" id="server-empty">
+            <div class="card__head">
+              <i data-lucide="server"></i>
+              <strong data-i18n="server.empty.title">Свой сервер не подключён</strong>
+            </div>
+            <p class="muted" data-i18n="server.empty.note">
+              Нужен, когда прямое соединение не проходит. Разворачивается одной командой и остаётся
+              под вашим контролем.
+            </p>
+            <ul class="bullets">
+              <li><i data-lucide="check"></i><span data-i18n="server.empty.b1">Подключение по ссылке, без обмена кодами</span></li>
+              <li><i data-lucide="check"></i><span data-i18n="server.empty.b2">Работает там, где NAT не пробивается</span></li>
+              <li><i data-lucide="check"></i><span data-i18n="server.empty.b3">Сервер не видит ни SDP, ни ключей звонка</span></li>
+            </ul>
+          </div>
+
+          <!-- состояние: сервер настроен -->
+          <div class="card" id="server-card" hidden>
+            <div class="card__head">
+              <span class="dot" id="server-dot"></span>
+              <strong id="server-host">call.example.com</strong>
+              <button class="icon-button icon-button--bare" id="action-edit-server">
+                <i data-lucide="chevron-right"></i>
+              </button>
+            </div>
+            <p class="muted" id="server-status" data-i18n="server.ready.status">
+              Проверен · сигналинг и TURN отвечают
+            </p>
+          </div>
+
+          <!-- состояние: ссылка получена -->
+          <div class="card" id="link-card" hidden>
+            <span class="label" data-i18n="link.label">Ссылка для собеседника</span>
+            <div class="link-box">
+              <input id="invite-link" readonly />
+              <button class="icon-button icon-button--bare" id="action-copy-link">
+                <i data-lucide="copy"></i>
+              </button>
+            </div>
+            <div class="actions">
+              <button class="button" id="action-copy-link-2">
+                <i data-lucide="copy"></i><span data-i18n="link.copy">Скопировать</span>
+              </button>
+              <button class="icon-button" id="action-qr-link">
+                <i data-lucide="qr-code"></i>
+              </button>
+            </div>
+            <canvas id="qr-canvas" class="qr" hidden></canvas>
+          </div>
+
+          <div class="row row--static" id="link-status" hidden>
+            <i data-lucide="loader-circle"></i>
+            <span data-i18n="link.waiting">Собеседник ещё не подключился</span>
+          </div>
+
+          <div class="grow"></div>
+
+          <button class="button button--primary" id="action-add-server" data-i18n="server.add">
+            Добавить сервер
+          </button>
+          <button class="button button--primary" id="action-start-session" hidden data-i18n="server.start">
+            Начать сессию
+          </button>
+          <button class="button button--primary" id="action-join-own-link" hidden data-i18n="link.join">
+            Подключиться
+          </button>
+        </section>
+      </div>
+    </main>
+
+    <!-- ================= Обмен кодами ================= -->
+    <main class="app app--narrow" id="screen-exchange" hidden>
+      <header class="head">
+        <button class="icon-button" id="action-exchange-back"><i data-lucide="arrow-left"></i></button>
+        <div class="head__titles">
+          <h1 id="exchange-title" data-i18n="exchange.title">Передайте код собеседнику</h1>
+          <p class="muted" id="exchange-hint" data-i18n="exchange.hint">
+            Отправьте свой код любым способом и вставьте сюда тот, что придёт в ответ.
           </p>
-        </header>
-
-        <div class="code-block">
-          <input id="invite-link" class="code code--single" readonly />
-          <div class="row">
-            <button class="button" id="action-copy-link">Скопировать ссылку</button>
-            <button class="button button--ghost" id="action-qr-link">Показать QR</button>
-          </div>
-          <canvas id="qr-link-canvas" class="qr" hidden></canvas>
         </div>
+      </header>
 
-        <p class="muted" id="invite-status">Ожидаем собеседника…</p>
-      </section>
-
-      <!-- Звонок -->
-      <section class="screen screen--call" id="screen-call" hidden>
-        <div class="stage">
-          <video id="remote-video" class="video video--remote" autoplay playsinline></video>
-          <video id="local-video" class="video video--local" autoplay playsinline muted></video>
-
-          <div class="badges">
-            <span class="badge" id="badge-connection">соединение…</span>
-            <span class="badge" id="badge-encryption"></span>
-            <span class="badge" id="badge-viewer" hidden>только просмотр</span>
-          </div>
-
-          <div class="peer-state" id="peer-state" hidden></div>
+      <div class="card" id="outgoing-block">
+        <span class="label" data-i18n="exchange.yourCode">Ваш код</span>
+        <textarea id="outgoing-code" class="code" readonly rows="4"></textarea>
+        <div class="actions">
+          <button class="button" id="action-copy-code">
+            <i data-lucide="copy"></i><span data-i18n="link.copy">Скопировать</span>
+          </button>
+          <button class="icon-button" id="action-qr-code"><i data-lucide="qr-code"></i></button>
         </div>
+        <canvas id="qr-code-canvas" class="qr" hidden></canvas>
+      </div>
 
+      <div class="card">
+        <span class="label" data-i18n="exchange.peerCode">Код собеседника</span>
+        <textarea
+          id="incoming-code"
+          class="code"
+          rows="4"
+          autocomplete="off"
+          spellcheck="false"
+          data-i18n-placeholder="exchange.placeholder"
+        ></textarea>
+        <button class="button button--primary" id="action-accept" data-i18n="exchange.connect">
+          Подключиться
+        </button>
+      </div>
+    </main>
+
+    <!-- ================= Звонок ================= -->
+    <main class="call" id="screen-call" hidden>
+      <video id="remote-video" class="call__video" autoplay playsinline></video>
+
+      <div class="call__off" id="call-off">
+        <i data-lucide="video-off"></i>
+        <p data-i18n="call.peerCameraOff">Собеседник выключил камеру</p>
+      </div>
+
+      <div class="call__top">
+        <div class="badges">
+          <span class="badge badge--ok" id="badge-encryption">
+            <i data-lucide="shield-check"></i><span data-i18n="call.e2ee">сквозное шифрование</span>
+          </span>
+          <span class="badge" id="badge-connection">
+            <i data-lucide="zap"></i><span>—</span>
+          </span>
+          <span class="badge" id="badge-timer"><i data-lucide="timer"></i><span>00:00</span></span>
+        </div>
+        <div class="stats-chip" id="stats"></div>
+      </div>
+
+      <div class="call__center">
         <div class="sas" id="sas-block" hidden>
-          <span class="sas__label">Сверьте фразу голосом:</span>
-          <strong class="sas__words" id="sas-words"></strong>
-          <button class="button button--ghost button--small" id="action-sas-ok">Совпадает</button>
+          <i data-lucide="shield-check"></i>
+          <div class="sas__text">
+            <span class="sas__label" data-i18n="call.sasLabel">Сверьте фразу голосом</span>
+            <strong class="sas__words" id="sas-words"></strong>
+          </div>
+          <button class="button button--small" id="action-sas-ok" data-i18n="call.sasOk">Совпадает</button>
         </div>
+      </div>
 
-        <div class="controls">
-          <button class="button button--round" id="action-mic" aria-pressed="false">Микрофон</button>
-          <button class="button button--round" id="action-cam" aria-pressed="false">Камера</button>
-          <select class="select" id="quality-select" aria-label="Качество видео"></select>
-          <button class="button button--round button--danger" id="action-hangup">Завершить</button>
+      <div class="call__bottom">
+        <div class="call__slot"></div>
+        <div class="call__slot call__slot--center">
+          <div class="controls">
+            <button class="control" id="call-mic" aria-pressed="false"><i data-lucide="mic-off"></i></button>
+            <button class="control" id="call-cam" aria-pressed="false"><i data-lucide="video-off"></i></button>
+            <label class="control control--select">
+              <select id="quality-select"></select>
+              <i data-lucide="chevron-down"></i>
+            </label>
+            <button class="control control--danger" id="action-hangup">
+              <i data-lucide="phone-off"></i>
+              <span class="control__label" data-i18n="call.hangUp">Завершить</span>
+            </button>
+          </div>
         </div>
+        <div class="call__slot call__slot--end">
+          <div class="pip" id="pip">
+            <video id="local-video" autoplay playsinline muted></video>
+            <div class="pip__off" id="pip-off">
+              <i data-lucide="video-off"></i>
+              <span data-i18n="call.you">вы</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
 
-        <dl class="stats" id="stats"></dl>
-      </section>
-
-      <!-- Настройки -->
-      <section class="screen" id="screen-settings" hidden>
-        <header class="screen__head">
-          <h2>Настройки</h2>
+    <!-- ================= Настройки ================= -->
+    <div class="overlay" id="screen-settings" hidden>
+      <section class="sheet">
+        <header class="sheet__head">
+          <h2 data-i18n="settings.title">Настройки</h2>
+          <button class="icon-button" id="action-close-settings"><i data-lucide="x"></i></button>
         </header>
 
+        <span class="section" data-i18n="settings.server">СИГНАЛЬНЫЙ СЕРВЕР</span>
         <div class="field">
-          <label class="label" for="setting-quality">Качество видео</label>
-          <select id="setting-quality" class="select"></select>
-        </div>
-
-        <div class="field">
-          <label class="label" for="setting-camera">Камера</label>
-          <select id="setting-camera" class="select"></select>
-        </div>
-
-        <div class="field">
-          <label class="label" for="setting-microphone">Микрофон</label>
-          <select id="setting-microphone" class="select"></select>
-        </div>
-
-        <div class="field">
-          <label class="label" for="setting-passphrase">Общая парольная фраза</label>
-          <input
-            id="setting-passphrase"
-            class="input"
-            type="password"
-            autocomplete="off"
-            placeholder="Необязательно"
-          />
-          <p class="hint">
-            Если вы договорились о фразе заранее и отдельно, подслушавший коды не расшифрует
-            разговор. Фраза нигде не сохраняется.
-          </p>
-        </div>
-
-        <div class="field">
-          <label class="label" for="setting-server">Свой сигнальный сервер</label>
+          <label class="label" for="setting-server" data-i18n="settings.address">Адрес</label>
           <input
             id="setting-server"
             class="input"
@@ -163,21 +294,29 @@
             autocomplete="off"
             placeholder="wss://call.example.com/ws"
           />
-          <p class="hint">
-            Нужен, только если прямое соединение не устанавливается. С ним подключение идёт по
-            ссылке, без обмена кодами. Как развернуть — см. DEPLOY.md в репозитории.
-          </p>
           <p class="hint hint--error" id="server-error" hidden></p>
         </div>
-
-        <div class="row">
-          <button class="button button--primary" id="action-save-settings">Сохранить</button>
-          <button class="button button--ghost" id="action-close-settings">Назад</button>
+        <div class="actions">
+          <button class="button" id="action-check-server" data-i18n="settings.check">Проверить</button>
+          <button class="button button--outline" id="action-remove-server" data-i18n="settings.remove">
+            Удалить
+          </button>
         </div>
-      </section>
+        <p class="hint" data-i18n="settings.serverHint">
+          Сервер нужен, только если прямое соединение не проходит. Как развернуть — DEPLOY.md в
+          репозитории.
+        </p>
 
-      <div class="toast" id="toast" hidden role="status"></div>
-    </main>
+        <span class="section" data-i18n="settings.language">ЯЗЫК</span>
+        <div class="langs" id="langs"></div>
+
+        <button class="button button--primary" id="action-save-settings" data-i18n="settings.save">
+          Сохранить
+        </button>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" hidden role="status"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
