@@ -812,6 +812,13 @@ export class CallSession {
     const remoteFingerprint = extractFingerprint(remoteSdp)
 
     if (localFingerprint === null || remoteFingerprint === null) {
+      console.debug(
+        `[p2p] нет отпечатка: свой ${localFingerprint === null ? 'НЕТ' : 'есть'},` +
+          ` чужой ${remoteFingerprint === null ? 'НЕТ' : 'есть'};` +
+          ` длины SDP ${localSdp.length}/${remoteSdp.length};` +
+          ` строки: «${/a=fingerprint:[^\r\n]*/i.exec(localSdp)?.[0] ?? '—'}»` +
+          ` / «${/a=fingerprint:[^\r\n]*/i.exec(remoteSdp)?.[0] ?? '—'}»`,
+      )
       return this.fail(message('session.noFingerprint'))
     }
 

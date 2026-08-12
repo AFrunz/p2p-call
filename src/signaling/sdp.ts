@@ -7,18 +7,21 @@ const CANDIDATE_TYPES = new Set<string>(['host', 'srflx', 'prflx', 'relay'])
 const TCP_TYPES = new Set<string>(['active', 'passive', 'so'])
 
 /**
- * Достаёт DTLS-fingerprint (SHA-256, 32 байта) из SDP.
- * Возвращает null, если строки нет или хеш не SHA-256 — оба случая означают,
- * что мы не сможем посчитать SAS и должны об этом сказать, а не молча продолжить.
+ * Достаёт DTLS-fingerprint из SDP.
+ *
+ * Принимаются SHA-256 и сильнее: какой именно хеш согласуют браузеры, зависит
+ * от них, а обе стороны всё равно видят одну и ту же пару отпечатков — этого
+ * достаточно, чтобы SAS сошёлся. SHA-1 отвергаем: слишком слаб, чтобы на нём
+ * держалась защита от подмены.
  */
 export function extractFingerprint(sdp: string): Bytes | null {
-  const match = /^a=fingerprint:sha-256[ \t]+([0-9a-fA-F:]+)/im.exec(sdp)
-  if (match?.[1] === undefined) return null
+  const match = /^a=fingerprint:sha-(256|384|512)[ \t]+([0-9a-fA-F:]+)/im.exec(sdp)
+  if (match?.[2] === undefined) return null
 
-  const parts = match[1].split(':')
-  if (parts.length !== FINGERPRINT_BYTES) return null
+  const parts = match[2].split(':')
+  if (parts.length < FINGERPRINT_BYTES) return null
 
-  const bytes = new Uint8Array(FINGERPRINT_BYTES)
+  const bytes = new Uint8Array(parts.length)
   for (let i = 0; i < parts.length; i++) {
     const pair = parts[i]!
     if (!/^[0-9a-fA-F]{2}$/.test(pair)) return null

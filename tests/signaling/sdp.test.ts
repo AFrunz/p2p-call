@@ -32,6 +32,17 @@ describe('extractFingerprint', () => {
     expect(extractFingerprint(SDP_WITH_SHA1_FINGERPRINT)).toBeNull()
   })
 
+  it('принимает хеши сильнее SHA-256: какой согласуют браузеры — их дело', () => {
+    // Обе стороны видят одну и ту же пару отпечатков, поэтому SAS сойдётся на
+    // любом достаточно сильном хеше.
+    const sha512 = [...Array(64)].map((_, i) => i.toString(16).padStart(2, '0')).join(':')
+    const sdp = OFFER_SDP.replace(/a=fingerprint:sha-256 [^\r\n]*/g, `a=fingerprint:sha-512 ${sha512}`)
+
+    const fingerprint = extractFingerprint(sdp)
+    expect(fingerprint).not.toBeNull()
+    expect(fingerprint!.length).toBe(64)
+  })
+
   it('переживает SDP с переводами строк CRLF', () => {
     const crlf = OFFER_SDP.replace(/\n/g, '\r\n')
     expect(toHex(extractFingerprint(crlf)!)).toBe(OFFER_FINGERPRINT_HEX)
