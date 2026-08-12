@@ -14,7 +14,6 @@ import { deriveSas } from '../crypto/sas.js'
 import { decodeMessage, encodeMessage } from '../protocol/messages.js'
 import type { ControlMessage } from '../protocol/messages.js'
 import { buildIceServers } from '../net/turn.js'
-import { probeNetwork } from '../net/probe.js'
 import type { NetworkReport } from '../net/probe.js'
 import { decodeEnvelope, encodeEnvelope } from '../signaling/codec.js'
 import { CodeFormatError } from '../signaling/codec.js'
@@ -73,6 +72,13 @@ export interface SessionOptions {
   signalingServer?: string | null
   /** Базовый адрес страницы для сборки ссылки. */
   pageUrl: string
+  /**
+   * Готовый отчёт диагностики сети.
+   *
+   * Считается один раз на главном экране: поднимать ради него ещё пару
+   * RTCPeerConnection в момент звонка — лишняя работа и лишние секунды.
+   */
+  network?: NetworkReport | null
 }
 
 type Listener = (view: SessionView) => void
@@ -156,13 +162,7 @@ export class CallSession {
         notice: media.problem?.message ?? describeMissing(media.missing),
       })
 
-      // Диагностика сети идёт фоном: она полезна, но задерживать из-за неё
-      // показ своего изображения незачем.
-      void probeNetwork(buildIceServers().map((server) => String(server.urls))).then((network) =>
-        this.patch({ network }),
-      )
-
-      this.patch({ phase: 'idle' })
+      this.patch({ phase: 'idle', network: this.options.network ?? null })
     } catch (error) {
       this.fail(error instanceof Error ? error.message : 'Не удалось подготовить звонок.')
     }

@@ -29,14 +29,47 @@ export const en: Record<string, string> = {
   'verdict.blocked.title': 'UDP is blocked',
   'verdict.unknown.title': 'Could not determine the network',
 
-  'checks.stun.title': 'STUN servers',
-  'checks.stun.value': '{answered} of {total} responded',
-  'checks.udp.title': 'Outbound UDP',
-  'checks.udp.ok': 'passes',
-  'checks.udp.blocked': 'blocked',
+  // Таблица проверок сети (src/net/checks.ts).
+  'checks.reachability.title': 'STUN servers',
+  'checks.reachability.ok': 'responding, outbound UDP passes',
+  'checks.reachability.blocked': 'none responded — UDP appears to be blocked on this network',
+  'checks.reachability.pending': 'not checked',
+
+  'checks.reflexive.title': 'External address',
+  'checks.reflexive.ok': 'seen from outside as {address}:{port}',
+  'checks.reflexive.blocked': 'could not be determined: STUN did not respond',
+  'checks.reflexive.pending': 'not checked',
+
+  'checks.nat.title': 'NAT type',
+  'checks.nat.open': 'a public address, no NAT at all',
+  'checks.nat.cone': 'the external port is kept — NAT traversal will work',
+  'checks.nat.symmetric':
+    'a new external port for every peer (symmetric NAT): with an ordinary router on the other side the connection may still work, with the same kind it will not',
+  'checks.nat.blocked': 'cannot be determined: STUN did not respond',
+  'checks.nat.unknown':
+    'only one STUN responded — a single probe cannot tell an ordinary NAT from a symmetric one',
+  'checks.nat.pending': 'not checked',
+
   'checks.ipv6.title': 'IPv6',
-  'checks.ipv6.present': 'available, NAT is not in the way',
-  'checks.ipv6.absent': 'unavailable, IPv4 only',
+  'checks.ipv6.ok': 'a global address is available — NAT can be bypassed',
+  'checks.ipv6.missing': 'unavailable, only IPv4 through NAT is left',
+  'checks.ipv6.pending': 'not checked',
+
+  'checks.verdict.ok.title': 'Nothing blocks you on your side',
+  'checks.verdict.warn.title': 'The connection may not go through',
+  'checks.verdict.fail.title': 'A direct connection will not work',
+  'checks.verdict.pending.title': 'Checking the network',
+  'checks.verdict.open.note':
+    'You have a public address with no NAT: anyone can reach you, whatever their router.',
+  'checks.verdict.cone.note':
+    'Your NAT keeps the external port — nothing blocks you on your side. Whether the connection works also depends on the router of the other person.',
+  'checks.verdict.symmetric.note':
+    'Your router hands out a new external port for every peer (symmetric NAT). With an ordinary router on the other side the connection may still work — that cannot be checked in advance, it takes an attempt.',
+  'checks.verdict.blocked.note':
+    'UDP is blocked on this network: a direct connection will not work with anyone. A relay server is required.',
+  'checks.verdict.unknown.note':
+    'Only one STUN server responded: a single probe cannot tell an ordinary NAT from a symmetric one. That does not prevent you from trying to connect.',
+  'checks.verdict.pending.note': 'Querying two STUN servers, this takes a couple of seconds.',
 
   'passphrase.label': 'Shared phrase',
   'passphrase.unset': 'not set',
@@ -189,4 +222,6 @@ export const en: Record<string, string> = {
   'toast.savedDeviceGone': 'The saved device is no longer connected — we took what is available.',
   'notice.noFrameEncryption':
     'This browser does not support end-to-end frame encryption. The call will be protected by the standard WebRTC transport encryption only.',
+  'passphrase.prompt': "A shared phrase you agreed on in advance, over a separate channel. Leave empty if you did not.",
+  'settings.checkOk': "The address looks valid. Start a session to check the connection itself.",
 }

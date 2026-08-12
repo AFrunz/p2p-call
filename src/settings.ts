@@ -1,3 +1,5 @@
+import { isLocale } from './i18n/index.js'
+import type { Locale } from './i18n/index.js'
 import { QUALITY_PRESETS, isQualityPreset } from './media/quality.js'
 import type { QualityPreset } from './media/quality.js'
 import { isAllowedServer } from './signaling/link.js'
@@ -7,6 +9,8 @@ const STORAGE_KEY = 'p2p-call/settings/v1'
 export interface Settings {
   /** Адрес своего сигналинга. null — работаем без сервера, обмениваясь кодами. */
   signalingServer: string | null
+  /** null — берём язык браузера. */
+  locale: Locale | null
   quality: QualityPreset
   cameraId: string | null
   microphoneId: string | null
@@ -14,6 +18,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   signalingServer: null,
+  locale: null,
   quality: 'auto',
   cameraId: null,
   microphoneId: null,
@@ -61,9 +66,11 @@ export function loadSettings(storage: Storage): Settings {
   const source = parsed as Record<string, unknown>
   const server = source['signalingServer']
   const quality = source['quality']
+  const locale = source['locale']
 
   return {
     signalingServer: typeof server === 'string' && isAllowedServer(server) ? server : null,
+    locale: isLocale(locale) ? locale : null,
     quality: isQualityPreset(quality) ? quality : DEFAULT_SETTINGS.quality,
     cameraId: stringOrNull(source['cameraId']),
     microphoneId: stringOrNull(source['microphoneId']),
@@ -79,15 +86,14 @@ export function saveSettings(storage: Storage, settings: Settings): void {
   }
 }
 
-/** Список пресетов для выпадающего меню вместе с человеческими подписями. */
-export function qualityOptions(): { value: QualityPreset; label: string }[] {
-  const labels: Record<QualityPreset, string> = {
-    auto: 'Автоматически',
-    '360p': '360p — экономно',
-    '720p': '720p — обычно',
-    '1080p': '1080p — максимум',
-  }
-  return QUALITY_PRESETS.map((value) => ({ value, label: labels[value] }))
+/**
+ * Пресеты для выпадающего меню.
+ *
+ * Возвращаем ключи, а не готовые подписи: язык переключается на лету, и
+ * зашитый в модуль русский текст пришлось бы обходить стороной.
+ */
+export function qualityOptions(): { value: QualityPreset; labelKey: string }[] {
+  return QUALITY_PRESETS.map((value) => ({ value, labelKey: `quality.${value}` }))
 }
 
 function stringOrNull(value: unknown): string | null {

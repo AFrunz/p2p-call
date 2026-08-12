@@ -33,14 +33,49 @@ export const ru: Record<string, string> = {
   'verdict.blocked.title': 'UDP заблокирован',
   'verdict.unknown.title': 'Сеть определить не удалось',
 
-  'checks.stun.title': 'STUN-серверы',
-  'checks.stun.value': 'ответили {answered} из {total}',
-  'checks.udp.title': 'UDP наружу',
-  'checks.udp.ok': 'проходит',
-  'checks.udp.blocked': 'заблокирован',
+  // Таблица проверок сети (src/net/checks.ts). Состояние «pending» значит в том
+  // числе «проб не было вовсе», поэтому оно нигде не звучит как успех.
+  'checks.reachability.title': 'STUN-серверы',
+  'checks.reachability.ok': 'отвечают, UDP наружу проходит',
+  'checks.reachability.blocked': 'не ответил ни один — похоже, UDP в этой сети заблокирован',
+  'checks.reachability.pending': 'не проверялось',
+
+  'checks.reflexive.title': 'Внешний адрес',
+  'checks.reflexive.ok': 'виден снаружи как {address}:{port}',
+  'checks.reflexive.blocked': 'узнать не удалось: STUN не ответил',
+  'checks.reflexive.pending': 'не проверялось',
+
+  'checks.nat.title': 'Тип NAT',
+  'checks.nat.open': 'публичного адреса достаточно, NAT нет',
+  'checks.nat.cone': 'внешний порт сохраняется — пробить NAT получится',
+  'checks.nat.symmetric':
+    'новый внешний порт на каждого собеседника (symmetric NAT): с обычным роутером на той стороне соединение ещё может получиться, с таким же — нет',
+  'checks.nat.blocked': 'определить нельзя: STUN не ответил',
+  'checks.nat.unknown': 'ответил только один STUN — отличить обычный NAT от symmetric по одной пробе нельзя',
+  'checks.nat.pending': 'не проверялось',
+
   'checks.ipv6.title': 'IPv6',
-  'checks.ipv6.present': 'есть, NAT не помешает',
-  'checks.ipv6.absent': 'нет, только IPv4',
+  'checks.ipv6.ok': 'есть глобальный адрес — NAT можно обойти',
+  'checks.ipv6.missing': 'нет, остаётся только IPv4 через NAT',
+  'checks.ipv6.pending': 'не проверялось',
+
+  'checks.verdict.ok.title': 'С вашей стороны препятствий нет',
+  'checks.verdict.warn.title': 'Соединение может не установиться',
+  'checks.verdict.fail.title': 'Прямое соединение не пройдёт',
+  'checks.verdict.pending.title': 'Проверяем сеть',
+  'checks.verdict.open.note':
+    'У вас публичный адрес без NAT: к вам сможет пробиться собеседник с любым роутером.',
+  // Проба видит только нашу сторону, и то лишь mapping behavior: фильтрацию
+  // (RFC 5780) браузер померить не даёт, поэтому успех тут не обещаем.
+  'checks.verdict.cone.note':
+    'Ваш NAT сохраняет внешний порт — с вашей стороны препятствий нет. Получится ли соединение, зависит ещё и от роутера собеседника.',
+  'checks.verdict.symmetric.note':
+    'Ваш роутер выдаёт новый внешний порт на каждого собеседника (symmetric NAT). С обычным роутером на той стороне соединение может и установиться — заранее это не проверить, понадобится попытка.',
+  'checks.verdict.blocked.note':
+    'В этой сети заблокирован UDP: прямое соединение не установится ни с кем. Понадобится сервер-ретранслятор.',
+  'checks.verdict.unknown.note':
+    'Ответил только один STUN-сервер: по одной пробе отличить обычный NAT от symmetric нельзя. Пробовать соединяться это не мешает.',
+  'checks.verdict.pending.note': 'Опрашиваем два STUN-сервера, это занимает пару секунд.',
 
   'passphrase.label': 'Общая фраза',
   'passphrase.unset': 'не задана',
@@ -197,4 +232,6 @@ export const ru: Record<string, string> = {
   'toast.savedDeviceGone': 'Сохранённое устройство больше не подключено — взяли то, что есть.',
   'notice.noFrameEncryption':
     'Этот браузер не поддерживает сквозное шифрование кадров. Звонок будет защищён только штатным транспортным шифрованием WebRTC.',
+  'passphrase.prompt': "Общая фраза, о которой вы договорились заранее и отдельным каналом. Оставьте пустым, если не договаривались.",
+  'settings.checkOk': "Адрес выглядит корректным. Проверить связь можно, начав сессию.",
 }

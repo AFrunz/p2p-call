@@ -10,6 +10,11 @@ import {
   localeName,
 } from '../../src/i18n/index.js'
 import type { Locale } from '../../src/i18n/index.js'
+import { buildChecks } from '../../src/net/checks.js'
+import { classifyNat } from '../../src/net/nat.js'
+import type { StunProbe } from '../../src/net/nat.js'
+import type { NetworkReport } from '../../src/net/probe.js'
+import { candidate } from '../fixtures/sdp.js'
 
 const MARKUP = readFileSync(fileURLToPath(new URL('../../index.html', import.meta.url)), 'utf8')
 
@@ -25,6 +30,55 @@ function markupKeys(): string[] {
 
 function placeholders(text: string): string[] {
   return [...text.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((match) => match[1] as string).sort()
+}
+
+/** Проба к STUN: локальный порт один, внешний — как решит NAT. */
+function probe(server: string, externalPort: number, localPort = 54321): StunProbe {
+  return {
+    server,
+    candidates: [
+      candidate({
+        type: 'srflx',
+        address: '203.0.113.7',
+        port: externalPort,
+        relatedAddress: '192.168.1.5',
+        relatedPort: localPort,
+      }),
+    ],
+  }
+}
+
+function report(probes: StunProbe[], ipv6 = false): NetworkReport {
+  return { ...classifyNat(probes), probes, ipv6 }
+}
+
+/** Ключи, которые таблица проверок способна попросить у словаря. */
+function checksKeys(): string[] {
+  const publicAddress = probe('stun:a', 54321)
+  publicAddress.candidates = publicAddress.candidates.map((info) => ({
+    ...info,
+    relatedAddress: info.address,
+    relatedPort: info.port,
+  }))
+
+  const views = [
+    buildChecks(null),
+    buildChecks(report([probe('stun:a', 41234), probe('stun:b', 41234)], true)),
+    buildChecks(report([probe('stun:a', 41234), probe('stun:b', 41999)])),
+    buildChecks(report([{ server: 'stun:a', candidates: [] }])),
+    buildChecks(report([probe('stun:a', 41234)])),
+    buildChecks(report([publicAddress])),
+  ]
+
+  return [
+    ...new Set(
+      views.flatMap((view) => [
+        ...view.checks.flatMap((check) => [check.titleKey, check.noteKey]),
+        view.verdict.titleKey,
+        view.verdict.noteKey,
+      ]),
+    ),
+  ]
 }
 
 describe('словари', () => {
@@ -80,6 +134,52 @@ describe('словари', () => {
     // Важно, что таких немного, а не то, что их нет вовсе.
     const same = Object.keys(ru).filter((key) => ru[key] === en[key])
     expect(same.length).toBeLessThan(Object.keys(ru).length / 10)
+  })
+
+  it('покрывают все ключи, которые запрашивает таблица проверок сети', () => {
+    const keys = checksKeys()
+    expect(keys.length).toBeGreaterThan(0)
+
+    for (const locale of LOCALES) {
+      const dict = dictionary(locale)
+      expect(
+        keys.filter((key) => dict[key] === undefined),
+        `нет в ${locale}`,
+      ).toEqual([])
+    }
+  })
+
+  it('на cone NAT не обещают успех: мы измерили только свою сторону', () => {
+    for (const locale of LOCALES) {
+      const dict = dictionary(locale)
+      const cone = dict['checks.verdict.cone.note'] ?? ''
+      expect(cone, locale).not.toBe(dict['checks.verdict.open.note'])
+      // Про роутер собеседника сказать обязаны — исход решает пара NAT.
+      expect(cone.toLowerCase(), locale).toMatch(/собеседник|other person|other side/)
+    }
+  })
+
+  it('symmetric NAT подают как предупреждение, а не как приговор', () => {
+    const hopeless = /не установится ни с кем|will not work with anyone/i
+
+    for (const locale of LOCALES) {
+      const dict = dictionary(locale)
+      expect(dict['checks.nat.symmetric'] ?? '', locale).not.toMatch(hopeless)
+      expect(dict['checks.verdict.symmetric.note'] ?? '', locale).not.toMatch(hopeless)
+      // Заблокированный UDP — единственный окончательный вывод, там так можно.
+      expect(dict['checks.verdict.blocked.note'] ?? '', locale).toMatch(hopeless)
+    }
+  })
+
+  it('в состоянии «не проверялось» не выдают неизвестное за успех', () => {
+    const success = /проход|ответ|получ|works|passes|responded|available/i
+
+    for (const locale of LOCALES) {
+      const dict = dictionary(locale)
+      for (const key of ['checks.reachability.pending', 'checks.reflexive.pending']) {
+        expect(dict[key] ?? '', `${locale}/${key}`).not.toMatch(success)
+      }
+    }
   })
 
   it('честно называют транспортное шифрование, а не «выключенным»', () => {

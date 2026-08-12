@@ -69,6 +69,7 @@ describe('loadSettings', () => {
     const store = storage()
     const settings = {
       signalingServer: 'wss://call.example.com/ws',
+      locale: 'en' as const,
       quality: '720p' as const,
       cameraId: 'cam-1',
       microphoneId: 'mic-1',
@@ -120,12 +121,29 @@ describe('saveSettings', () => {
 })
 
 describe('qualityOptions', () => {
-  it('покрывает все пресеты и даёт каждому подпись', () => {
+  it('покрывает все пресеты и даёт каждому ключ подписи', () => {
     const options = qualityOptions()
     expect(options.map((option) => option.value)).toEqual([...QUALITY_PRESETS])
 
     for (const option of options) {
-      expect(option.label.length, option.value).toBeGreaterThan(0)
+      expect(option.labelKey, option.value).toBe(`quality.${option.value}`)
     }
+  })
+})
+
+describe('язык', () => {
+  it('по умолчанию язык не выбран — значит берём его у браузера', () => {
+    expect(loadSettings(storage()).locale).toBeNull()
+  })
+
+  it('переживает round-trip', () => {
+    const store = storage()
+    saveSettings(store, { ...DEFAULT_SETTINGS, locale: 'en' })
+    expect(loadSettings(store).locale).toBe('en')
+  })
+
+  it('выбрасывает неизвестный язык вместо того, чтобы им пользоваться', () => {
+    const store = storage({ 'p2p-call/settings/v1': JSON.stringify({ locale: 'klingon' }) })
+    expect(loadSettings(store).locale).toBeNull()
   })
 })
