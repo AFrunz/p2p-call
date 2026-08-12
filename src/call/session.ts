@@ -308,7 +308,10 @@ export class CallSession {
       await connection.setLocalDescription(await connection.createOffer())
       await waitForGathering(connection)
 
-      this.patch({ phase: 'awaiting-exchange', outgoingCode: await this.buildCode('initiator') })
+      this.patch({
+        phase: 'awaiting-exchange',
+        outgoingCode: await this.buildCode('initiator', connection),
+      })
     } catch (error) {
       this.fail(describe(error))
     }
@@ -359,17 +362,17 @@ export class CallSession {
         // пока человек несёт код на второе устройство.
         const held = this.signaling === null ? stripCandidates(envelope.sdp) : null
         this.heldCandidates = held?.candidates ?? []
+        await connection.setRemoteDescription({ type: 'offer', sdp: held?.sdp ?? envelope.sdp })
+
+        // Только теперь: до удалённого описания addIceCandidate падает, и
+        // капельница глохла на первом же вызове, ни разу не сработав.
         if (held !== null) {
-          // Момент назначает отвечающий и кладёт его в ответный код: у обеих
-          // сторон он получается общим, а не «у каждого свой отсчёт».
           this.scheduleRelease(Date.now() + (this.options.connectDelay ?? 60) * 1000)
         }
-
-        await connection.setRemoteDescription({ type: 'offer', sdp: held?.sdp ?? envelope.sdp })
         await connection.setLocalDescription(await connection.createAnswer())
         await waitForGathering(connection)
 
-        this.patch({ phase: 'connecting', outgoingCode: await this.buildCode('responder') })
+        this.patch({ phase: 'connecting', outgoingCode: await this.buildCode('responder', connection) })
       } else {
         if (envelope.role !== 'responder') throw new SessionError('session.wrongCodeRole')
 
@@ -377,12 +380,11 @@ export class CallSession {
         // эту сторону, пока человек идёт в мессенджер сказать «я вставил».
         const answer = this.signaling === null ? stripCandidates(envelope.sdp) : null
         this.heldCandidates = answer?.candidates ?? []
-        if (answer !== null) this.scheduleRelease(envelope.startAt)
-
         await this.connection.setRemoteDescription({
           type: 'answer',
           sdp: answer?.sdp ?? envelope.sdp,
         })
+        if (answer !== null) this.scheduleRelease(envelope.startAt)
         this.patch({ phase: 'connecting' })
       }
 
@@ -748,13 +750,12 @@ export class CallSession {
 
       const held = stripCandidates(offer)
       this.heldCandidates = held.candidates
-
       await connection.setRemoteDescription({ type: 'offer', sdp: held.sdp })
       await connection.setLocalDescription(await connection.createAnswer())
       await waitForGathering(connection)
 
       this.patch({
-        outgoingCode: await this.buildCode('responder'),
+        outgoingCode: await this.buildCode('responder', connection),
         notice: message('session.answerRefreshed'),
       })
       await this.establishKeys()
@@ -765,14 +766,16 @@ export class CallSession {
   }
 
   /** Собирает конверт с нашим SDP и публичным ключом. */
-  private async buildCode(role: Role): Promise<string> {
-    const description = this.connection?.localDescription
+  private async buildCode(role: Role, from?: RTCPeerConnection): Promise<string> {
+    const connection = from ?? this.connection
+    const description = connection?.localDescription
     if (description == null || this.keyPair === null) {
       // Обычно это гонка: соединение снесли, пока мы ждали сбор кандидатов.
       // Текст про «ещё не готово» тут вводит в заблуждение, поэтому пишем в
       // журнал, что произошло на самом деле.
       console.debug(
-        `[p2p] код не собрать: соединение ${this.connection === null ? 'снесено' : 'без описания'}`,
+        `[p2p] код не собрать: соединение ${connection == null ? 'снесено' : 'без описания'}` +
+          `${connection === this.connection ? '' : ' (подменено на другое)'}`,
       )
       throw new SessionError('session.notReady')
     }

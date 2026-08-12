@@ -6,12 +6,10 @@ import type { CandidateType } from '../signaling/types.js'
 export const GATHER_TIMEOUT_MS = 5000
 
 export function createConnection(iceServers: RTCIceServer[]): RTCPeerConnection {
-  return new RTCPeerConnection({
-    iceServers,
-    // Прогреваем кандидатов заранее, чтобы код появился быстрее.
-    iceCandidatePoolSize: 4,
-    bundlePolicy: 'max-bundle',
-  })
+  // Пул кандидатов не прогреваем: он запускает механику ICE ещё до того, как
+  // появились описания, и агент успевает сделать выводы о соединении, которого
+  // пока нет.
+  return new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle' })
 }
 
 /**
