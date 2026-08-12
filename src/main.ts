@@ -398,9 +398,12 @@ function render(view: SessionView): void {
     else toast(tm(view.error))
   }
 
+  // Пока новый код не готов, поле обязано быть пустым: иначе пользователь
+  // копирует код уже уничтоженной сессии и удивляется, почему не соединяется.
+  el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode ?? ''
+  show('outgoing-block', view.outgoingCode !== null)
   if (view.outgoingCode !== null) {
-    el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode
-    show('outgoing-block', true)
+    setText('outgoing-label', t(view.role === 'responder' ? 'exchange.answerCode' : 'exchange.yourCode'))
   }
   if (view.inviteLink !== null && view.inviteLink !== inviteLink) {
     inviteLink = view.inviteLink
@@ -447,6 +450,9 @@ function onPhase(view: SessionView): void {
     'exchange-status-text',
     view.phase === 'connecting' ? 'status.connecting' : view.phase === 'awaiting-exchange' ? 'status.waitingCode' : null,
   )
+  if (view.phase === 'connecting' && view.iceState !== null) {
+    setText('exchange-status-text', `${t('status.connecting')} (${view.iceState})`)
+  }
   if (view.phase === 'connecting' && inviteLink.length > 0) {
     setText('link-status-text', t('link.peerJoined'))
   }
@@ -667,7 +673,15 @@ function wire(): void {
   })
 
   on('action-open-join', 'click', () => {
+    // Сессия могла остаться от прошлой попытки «Создать звонок»: тогда код
+    // собеседника ушёл бы не в ту ветку и был бы отвергнут как чужая роль.
+    session?.hangUp()
+    session = null
+    lastPhase = null
+
     hideFailures()
+    el<HTMLTextAreaElement>('outgoing-code').value = ''
+    el<HTMLTextAreaElement>('incoming-code').value = ''
     show('outgoing-block', false)
     setText('exchange-title', t('exchange.joinTitle'))
     setText('exchange-hint', t('exchange.joinHint'))

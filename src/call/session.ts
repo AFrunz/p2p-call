@@ -22,7 +22,7 @@ import { CodeFormatError } from '../signaling/codec.js'
 import { SignalingClient } from '../signaling/client.js'
 import { buildInviteLink, generateInvite, parseInviteLink } from '../signaling/link.js'
 import type { Invite } from '../signaling/link.js'
-import { extractFingerprint } from '../signaling/sdp.js'
+import { extractFingerprint, parseCandidateLine } from '../signaling/sdp.js'
 import type { Role } from '../signaling/types.js'
 import type { QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
@@ -57,6 +57,8 @@ export interface SessionView {
   /** Работает ли сквозное шифрование кадров поверх штатного DTLS-SRTP. */
   frameEncryption: boolean
   network: NetworkReport | null
+  /** Состояние ICE: видно в строке ожидания и в консольном журнале. */
+  iceState: RTCIceConnectionState | null
   stats: CallStats | null
   peerMuted: { audio: boolean; video: boolean }
   /** Наше состояние: по умолчанию входим в звонок молча и без картинки. */
@@ -116,6 +118,7 @@ export class CallSession {
     sas: null,
     frameEncryption: false,
     network: null,
+    iceState: null,
     stats: null,
     peerMuted: { audio: false, video: false },
     muted: { audio: true, video: true },
@@ -393,8 +396,39 @@ export class CallSession {
     })
 
     connection.addEventListener('connectionstatechange', () => {
+      this.trace('connection')
       void this.onConnectionState(connection.connectionState)
     })
+
+    // Журнал состояний в консоли: вслепую отличить «не собрались кандидаты» от
+    // «собрались, но пара не сошлась» иначе невозможно.
+    for (const event of ['iceconnectionstatechange', 'icegatheringstatechange'] as const) {
+      connection.addEventListener(event, () => {
+        this.trace(event)
+        this.patch({ iceState: connection.iceConnectionState })
+      })
+    }
+
+    connection.addEventListener('icecandidate', (event) => {
+      if (event.candidate === null) return
+      const parsed = parseCandidateLine(event.candidate.candidate)
+      console.debug('[p2p] кандидат', parsed?.type, parsed?.protocol, parsed?.address)
+    })
+
+    connection.addEventListener('icecandidateerror', (event) => {
+      const error = event as RTCPeerConnectionIceErrorEvent
+      console.debug('[p2p] ошибка кандидата', error.errorCode, error.errorText, error.url)
+    })
+  }
+
+  private trace(reason: string): void {
+    const connection = this.connection
+    if (connection === null) return
+
+    console.debug(
+      `[p2p] ${reason}: conn=${connection.connectionState} ice=${connection.iceConnectionState}` +
+        ` gather=${connection.iceGatheringState} sig=${connection.signalingState}`,
+    )
   }
 
   private async onConnectionState(state: RTCPeerConnectionState): Promise<void> {
@@ -424,6 +458,7 @@ export class CallSession {
           // Не вышло — падаем в общий текст ниже.
         }
       }
+      void this.dumpCandidates()
       // Соединение не поднялось после честной попытки и рестарта ICE — это
       // ровно тот случай, когда помогает только ретранслятор.
       this.fail(unreachableMessage(this.view.network), true)
@@ -502,8 +537,31 @@ export class CallSession {
     this.stopWatchdog()
     this.watchdog = setTimeout(() => {
       if (this.view.phase === 'connected') return
+      this.trace('сторожевой таймер')
+      void this.dumpCandidates()
       this.fail(unreachableMessage(this.view.network), true)
     }, CONNECT_TIMEOUT_MS)
+  }
+
+  /** Выкладывает в консоль, какие пары кандидатов вообще пробовались. */
+  private async dumpCandidates(): Promise<void> {
+    const connection = this.connection
+    if (connection === null) return
+
+    try {
+      const report = await connection.getStats()
+      report.forEach((entry) => {
+        const stat = entry as Record<string, unknown>
+        if (stat['type'] === 'candidate-pair') {
+          console.debug('[p2p] пара', stat['state'], stat['localCandidateId'], stat['remoteCandidateId'])
+        }
+        if (stat['type'] === 'local-candidate' || stat['type'] === 'remote-candidate') {
+          console.debug('[p2p]', stat['type'], stat['candidateType'], stat['address'], stat['port'])
+        }
+      })
+    } catch {
+      // Статистика недоступна — не повод падать поверх уже случившегося провала.
+    }
   }
 
   private stopWatchdog(): void {
