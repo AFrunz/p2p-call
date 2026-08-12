@@ -19,8 +19,33 @@ describe('словарь SAS', () => {
     for (const word of SAS_WORDS) {
       expect(word.length, word).toBeGreaterThanOrEqual(3)
       expect(word.length, word).toBeLessThanOrEqual(8)
-      expect(word, word).toMatch(/^[а-яё]+$/)
+      expect(word, word).toMatch(/^[a-z]+$/)
     }
+  })
+
+  it('не содержит слов, различающихся одной буквой', () => {
+    // Фразу читают вслух и часто на плохой линии: пара вроде berry/ferry
+    // превращает сверку в угадайку, а ошибка тут означает «нас слушают».
+    const risky: string[] = []
+    for (let i = 0; i < SAS_WORDS.length; i++) {
+      for (let j = i + 1; j < SAS_WORDS.length; j++) {
+        const a = SAS_WORDS[i]!
+        const b = SAS_WORDS[j]!
+        if (a.length !== b.length) continue
+
+        let differences = 0
+        for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) differences++
+        if (differences === 1) risky.push(`${a}/${b}`)
+      }
+    }
+    expect(risky).toEqual([])
+  })
+
+  it('не локализуется: словарь один на все языки интерфейса', () => {
+    // Разойдись словарь по языкам — собеседники увидели бы разные фразы и
+    // решили, что их слушают. Латиница здесь и есть признак того, что список
+    // общий.
+    expect(SAS_WORDS.every((word) => /^[a-z]+$/.test(word))).toBe(true)
   })
 })
 
