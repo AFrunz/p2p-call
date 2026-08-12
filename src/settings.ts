@@ -16,8 +16,6 @@ export interface Settings {
   quality: QualityPreset
   cameraId: string | null
   microphoneId: string | null
-  /** Через сколько секунд после готовности ответа обе стороны начнут проверку. */
-  connectDelay: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -26,11 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   quality: 'auto',
   cameraId: null,
   microphoneId: null,
-  connectDelay: 60,
 }
-
-/** Варианты задержки старта: меньше 30 секунд на перенос кода не хватает. */
-export const CONNECT_DELAYS = [30, 60, 120, 300] as const
 
 export type ServerCheck = { ok: true } | { ok: false; error: Message }
 
@@ -75,9 +69,6 @@ export function loadSettings(storage: Storage): Settings {
     quality: isQualityPreset(quality) ? quality : DEFAULT_SETTINGS.quality,
     cameraId: stringOrNull(source['cameraId']),
     microphoneId: stringOrNull(source['microphoneId']),
-    connectDelay: isConnectDelay(source['connectDelay'])
-      ? source['connectDelay']
-      : DEFAULT_SETTINGS.connectDelay,
   }
 }
 
@@ -98,10 +89,6 @@ export function saveSettings(storage: Storage, settings: Settings): void {
  */
 export function qualityOptions(): { value: QualityPreset; labelKey: string }[] {
   return QUALITY_PRESETS.map((value) => ({ value, labelKey: `quality.${value}` }))
-}
-
-export function isConnectDelay(value: unknown): value is number {
-  return typeof value === 'number' && (CONNECT_DELAYS as readonly number[]).includes(value)
 }
 
 function stringOrNull(value: unknown): string | null {

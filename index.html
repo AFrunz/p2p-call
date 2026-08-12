@@ -220,12 +220,7 @@
         </div>
         <canvas id="qr-code-canvas" class="qr" hidden></canvas>
 
-        <div id="answer-sent" hidden>
-          <p class="hint" id="countdown-hint"></p>
-          <button class="button" id="action-answer-sent" data-i18n="exchange.connectNow">
-            Начать сейчас
-          </button>
-        </div>
+        <p class="hint" id="countdown-hint" hidden></p>
 
         <div id="answer-refresh" hidden>
           <p class="hint" data-i18n="exchange.answerWindow">
@@ -386,15 +381,6 @@
           Сервер нужен, только если прямое соединение не проходит. Как развернуть — DEPLOY.md в
           репозитории.
         </p>
-
-        <span class="section" data-i18n="settings.delay">ЗАДЕРЖКА ПОДКЛЮЧЕНИЯ</span>
-        <div class="field">
-          <select id="setting-delay" class="select"></select>
-          <p class="hint" data-i18n="settings.delayHint">
-            Сколько времени даётся на перенос кода. Обе стороны начинают проверку
-            одновременно — момент назначает тот, кто отвечает, и кладёт его в код.
-          </p>
-        </div>
 
         <span class="section" data-i18n="settings.language">ЯЗЫК</span>
         <div class="langs" id="langs"></div>
