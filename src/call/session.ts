@@ -19,6 +19,14 @@ import { buildIceServers } from '../net/turn.js'
 import type { NetworkReport } from '../net/probe.js'
 import { decodeEnvelope, encodeEnvelope } from '../signaling/codec.js'
 import { CodeFormatError } from '../signaling/codec.js'
+import type { Envelope } from '../signaling/types.js'
+
+/** У каждой причины свой совет: обрезанный код и чужая версия лечатся по-разному. */
+const CODE_ERRORS: Record<string, string> = {
+  malformed: 'session.codeUnreadable',
+  truncated: 'session.codeTruncated',
+  version: 'session.codeVersion',
+}
 import { SignalingClient } from '../signaling/client.js'
 import { buildInviteLink, generateInvite, parseInviteLink } from '../signaling/link.js'
 import type { Invite } from '../signaling/link.js'
@@ -276,9 +284,30 @@ export class CallSession {
    * собственное локальное описание.
    */
   async acceptCode(code: string): Promise<void> {
+    // Разбор кода вынесен в отдельный try: раньше в ту же ветку попадали
+    // ошибки со всего остального блока, и «код не распознан» показывалось
+    // там, где код был в полном порядке.
+    let envelope: Envelope
     try {
-      const envelope = await decodeEnvelope(code)
+      envelope = await decodeEnvelope(code)
+    } catch (error) {
+      const kind = error instanceof CodeFormatError ? error.kind : 'malformed'
+      console.debug(
+        `[p2p] код не разобрался: ${kind}, символов ${code.trim().length},` +
+          ` начало «${code.trim().slice(0, 12)}», конец «${code.trim().slice(-12)}»`,
+      )
+      return this.fail(message(CODE_ERRORS[kind] ?? 'session.codeUnreadable'))
+    }
+
+    try {
       this.remotePublicKey = envelope.publicKey
+
+      // Ответный код без своего звонка означает, что сессия уже закрылась —
+      // например, по таймауту. Пытаться применить его как приглашение нельзя:
+      // браузер отвергнет answer, поданный как offer, и причина потеряется.
+      if (this.connection === null && envelope.role === 'responder') {
+        return this.fail(message('session.answerWithoutOffer'))
+      }
 
       if (this.connection === null) {
         await this.openConnection('responder')
@@ -297,9 +326,7 @@ export class CallSession {
 
       await this.establishKeys()
     } catch (error) {
-      this.fail(
-        error instanceof CodeFormatError ? message('session.codeUnreadable') : describe(error),
-      )
+      this.fail(describe(error))
     }
   }
 

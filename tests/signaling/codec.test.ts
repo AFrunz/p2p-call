@@ -111,6 +111,26 @@ describe('encodeEnvelope / decodeEnvelope', () => {
     await expect(decodeEnvelope(code)).rejects.toMatchObject({ kind: 'version' })
   })
 
+  it('переживает большой SDP с IPv6 и десятком кандидатов', async () => {
+    // Реальный offer от браузера в корпоративной сети: две медиасекции,
+    // host- и srflx-кандидаты на четырёх интерфейсах, длинные адреса IPv6.
+    const candidates = [
+      'a=candidate:0 1 UDP 2122252543 172.25.63.36 62550 typ host',
+      'a=candidate:1 1 UDP 2122187007 2a02:6bf:8007:201:a934:7647:172d:9a5a 62918 typ host',
+      'a=candidate:2 1 UDP 2122121471 10.215.154.145 60935 typ host',
+      'a=candidate:3 1 UDP 2122055935 2a02:6bf:8080:b83::1:10 63999 typ host',
+      'a=candidate:4 1 TCP 2105524479 172.25.63.36 9 typ host tcptype active',
+      'a=candidate:5 1 TCP 2105458943 2a02:6bf:8007:201:a934:7647:172d:9a5a 9 typ host tcptype active',
+      'a=candidate:6 1 TCP 2105393407 10.215.154.145 9 typ host tcptype active',
+      'a=candidate:7 1 TCP 2105327871 2a02:6bf:8080:b83::1:10 9 typ host tcptype active',
+      'a=candidate:8 1 UDP 1686052863 93.158.191.252 53699 typ srflx raddr 172.25.63.36 rport 62550',
+    ]
+    const big = OFFER_SDP.replace(/a=candidate:[^\n]*\n/g, '') + candidates.join('\r\n') + '\r\n'
+
+    const decoded = await decodeEnvelope(await encodeEnvelope(envelope({ sdp: big })))
+    expect(decoded.sdp).toBe(big)
+  })
+
   it('терпит код, испачканный пробелами при пересылке', async () => {
     const code = await encodeEnvelope(envelope())
     const dirty = `  ${code.slice(0, 20)}\n${code.slice(20)}  `
