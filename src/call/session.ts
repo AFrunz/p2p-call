@@ -528,6 +528,15 @@ export class CallSession {
     }
 
     if (state === 'failed') {
+      // До обмена кодами проверять нечего: удалённого описания нет, пары не
+      // строятся. Провал в этот момент — не отказ сети, а следствие того, что
+      // вкладку свернули или усыпили. Хоронить из-за него звонок нельзя: код
+      // уже унесли на второе устройство.
+      if (this.view.phase === 'awaiting-exchange') {
+        console.debug('[p2p] провал ICE до обмена кодами — игнорируем')
+        return
+      }
+
       this.stopWatchdog()
 
       // Обрыв уже состоявшегося звонка — это не «не удалось подключиться».
@@ -888,6 +897,7 @@ export class CallSession {
   }
 
   private fail(reason: Message, suggestServer = false): void {
+    console.debug(`[p2p] провал: ${reason.key} (фаза ${this.view.phase})`)
     this.teardown()
     this.patch({ phase: 'failed', error: reason, suggestServer })
   }
