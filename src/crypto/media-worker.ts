@@ -21,11 +21,22 @@ import type { Direction, MediaKind } from './kdf.js'
  * additionalData, поэтому подделать его незаметно нельзя.
  */
 
+/**
+ * Что известно о потоке в момент навешивания трансформа.
+ *
+ * Ни ключей, ни кодека здесь нет: трансформ вешается до согласования, потому
+ * что после него браузер может уже не принять его всерьёз — кодировщик
+ * запущен, и кадры пойдут мимо. Ключи и кодек досылаются отдельно, а кадры до
+ * их прихода ждут в очереди самого потока.
+ */
 export interface TransformOptions {
   kind: MediaKind
   direction: Direction
-  codec: Codec
   streamId: number
+}
+
+interface StreamConfig {
+  codec: Codec
   keys: DirectionKeys
 }
 
@@ -37,6 +48,25 @@ interface SenderState {
 
 const senders = new Map<string, SenderState>()
 const receivers = new Map<string, ReceiverKeys>()
+
+/** Настройки потоков и те, кто их ждёт. */
+const configs = new Map<string, StreamConfig>()
+const waiting = new Map<string, ((config: StreamConfig) => void)[]>()
+
+function configure(id: string, config: StreamConfig): void {
+  configs.set(id, config)
+  for (const resolve of waiting.get(id) ?? []) resolve(config)
+  waiting.delete(id)
+}
+
+function awaitConfig(id: string): StreamConfig | Promise<StreamConfig> {
+  const ready = configs.get(id)
+  if (ready !== undefined) return ready
+
+  return new Promise<StreamConfig>((resolve) => {
+    waiting.set(id, [...(waiting.get(id) ?? []), resolve])
+  })
+}
 
 /** Счётчики по каждому потоку: без них не понять, доходят ли кадры вообще. */
 const counters = new Map<string, { ok: number; failed: number; plaintext: number }>()
@@ -67,16 +97,20 @@ function isKeyFrame(frame: EncodedFrame): boolean {
   return frame.type === 'key'
 }
 
-async function encrypt(frame: EncodedFrame, options: TransformOptions): Promise<void> {
+async function encrypt(
+  frame: EncodedFrame,
+  options: TransformOptions,
+  config: StreamConfig,
+): Promise<void> {
   const id = streamKey(options)
   let state = senders.get(id)
   if (state === undefined) {
-    state = { counter: 0n, keyId: 0, keys: options.keys }
+    state = { counter: 0n, keyId: 0, keys: config.keys }
     senders.set(id, state)
   }
 
   const data = new Uint8Array(frame.data)
-  const { header, body } = splitFrame(data, options.codec, isKeyFrame(frame))
+  const { header, body } = splitFrame(data, config.codec, isKeyFrame(frame))
   const nonce = buildNonce(options.streamId, state.counter)
 
   const ciphertext = new Uint8Array(
@@ -91,11 +125,15 @@ async function encrypt(frame: EncodedFrame, options: TransformOptions): Promise<
   state.counter++
 }
 
-async function decrypt(frame: EncodedFrame, options: TransformOptions): Promise<void> {
+async function decrypt(
+  frame: EncodedFrame,
+  options: TransformOptions,
+  config: StreamConfig,
+): Promise<void> {
   const id = streamKey(options)
   let state = receivers.get(id)
   if (state === undefined) {
-    state = new ReceiverKeys(options.keys)
+    state = new ReceiverKeys(config.keys)
     receivers.set(id, state)
   }
 
@@ -129,9 +167,14 @@ function transformer(options: TransformOptions): TransformStream {
 
   return new TransformStream({
     async transform(frame: EncodedFrame, controller) {
+      // Кадры, пришедшие до ключей, ждут здесь: поток сам придержит очередь.
+      // Пропустить их открытым текстом нельзя — это ровно то, ради чего слой и
+      // существует.
+      const config = await awaitConfig(id)
+
       const state = counters.get(id)!
       try {
-        await apply(frame, options)
+        await apply(frame, options, config)
         controller.enqueue(frame)
 
         state.ok++
@@ -170,7 +213,7 @@ self.addEventListener('rtctransform', (event) => {
   const transform = (event as Event & { transformer: RTCRtpScriptTransformer }).transformer
   const options = transform.options as TransformOptions
 
-  self.postMessage({ t: 'attached', id: streamKey(options), codec: options.codec })
+  self.postMessage({ t: 'attached', id: streamKey(options) })
   pipe(transform.readable, transform.writable, options)
 })
 
@@ -179,6 +222,16 @@ self.addEventListener('message', (event: MessageEvent) => {
   const data = event.data as
     | { t: 'streams'; readable: ReadableStream; writable: WritableStream; options: TransformOptions }
     | { t: unknown }
+
+  if (data.t === 'configure') {
+    const message = data as unknown as {
+      streams: { id: string; codec: Codec; keys: DirectionKeys }[]
+    }
+    for (const stream of message.streams) {
+      configure(stream.id, { codec: stream.codec, keys: stream.keys })
+    }
+    return
+  }
 
   if (data.t === 'streams') {
     const message = data as {

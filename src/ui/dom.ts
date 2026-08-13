@@ -86,3 +86,20 @@ export function attachStream(target: HTMLVideoElement | string, stream: MediaStr
     )
   })
 }
+
+/**
+ * Приглушает звук элемента на несколько мгновений.
+ *
+ * Нужно на переключении слоя шифрования: декодер успевает получить кадры,
+ * собранные по старым правилам, и выдать их в наушники резким щелчком. Слушать
+ * такое вплотную к уху неприятно и небезопасно.
+ */
+export function silenceBriefly(id: string, ms: number): void {
+  const node = document.getElementById(id)
+  if (!(node instanceof HTMLMediaElement) || node.muted) return
+
+  node.muted = true
+  setTimeout(() => {
+    node.muted = false
+  }, ms)
+}

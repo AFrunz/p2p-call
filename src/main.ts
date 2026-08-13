@@ -34,6 +34,7 @@ import {
   setText,
   show,
   showOnly,
+  silenceBriefly,
 } from './ui/dom.js'
 import {
   describeConnection,
@@ -59,6 +60,11 @@ let session: CallSession | null = null
  * полученного разрешения.
  */
 let previewHint: { key: string } | { parts: Message[] } = { key: 'preview.requesting' }
+/** Слой шифрования в прошлой перерисовке — по нему ловим переключение. */
+let lastFrameEncryption: boolean | null = null
+
+/** Сколько молчим на переключении слоя, мс. */
+const ENCRYPTION_SWITCH_MUTE_MS = 400
 let unsubscribe: (() => void) | null = null
 let previewStream: MediaStream | null = null
 let network: NetworkReport | null = null
@@ -631,6 +637,13 @@ function onPhase(view: SessionView): void {
 
 function renderCall(view: SessionView): void {
   setBadge('badge-connection', tm(describeConnection(view.stats?.kind ?? null)))
+
+  // Смена слоя шифрования — момент, когда декодер получает кадры по старым
+  // правилам и выдаёт их резким щелчком прямо в наушники.
+  if (lastFrameEncryption !== null && lastFrameEncryption !== view.frameEncryption) {
+    silenceBriefly('remote-video', ENCRYPTION_SWITCH_MUTE_MS)
+  }
+  lastFrameEncryption = view.frameEncryption
 
   const encryption = el('badge-encryption')
   encryption.classList.toggle('badge--ok', view.frameEncryption)

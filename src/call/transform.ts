@@ -25,8 +25,6 @@ const STREAM_IDS: Record<MediaKind, number> = { audio: 0, video: 1 }
 interface AttachOptions {
   kind: MediaKind
   direction: 'send' | 'recv'
-  codec: Codec
-  keys: DirectionKeys
 }
 
 /**
@@ -58,9 +56,7 @@ function install(
   const payload = {
     kind: options.kind,
     direction: options.direction,
-    codec: options.codec,
     streamId: STREAM_IDS[options.kind],
-    keys: options.keys,
   }
 
   const support = detectTransformSupport()
@@ -126,11 +122,7 @@ export interface AttachResult {
   streams: string[]
 }
 
-export function attachAll(
-  worker: Worker,
-  connection: RTCPeerConnection,
-  keys: MediaKeys,
-): AttachResult {
+export function attachAll(worker: Worker, connection: RTCPeerConnection): AttachResult {
   let attached = true
   const streams: string[] = []
 
@@ -144,18 +136,49 @@ export function attachAll(
     ]
 
     for (const { endpoint, direction } of endpoints) {
-      const ok = attachTransform(worker, endpoint, {
-        kind,
-        direction,
-        codec: negotiatedCodec(endpoint, kind),
-        keys: keys[kind][direction],
-      })
+      const ok = attachTransform(worker, endpoint, { kind, direction })
       if (ok) streams.push(`${kind}/${direction}`)
       attached = ok && attached
     }
   }
 
   return { attached, streams }
+}
+
+/**
+ * Досылает воркеру ключи и согласованные кодеки.
+ *
+ * Отдельным шагом, потому что трансформ вешается до согласования: тогда кодек
+ * ещё неизвестен, да и ключей нет — публичный ключ собеседника приезжает
+ * позже. Кадры, пришедшие раньше настроек, ждут в очереди потока.
+ */
+export function configureStreams(
+  worker: Worker,
+  connection: RTCPeerConnection,
+  keys: MediaKeys,
+): void {
+  const streams: { id: string; codec: Codec; keys: DirectionKeys }[] = []
+
+  for (const transceiver of connection.getTransceivers()) {
+    const kind = transceiver.receiver.track?.kind
+    if (kind !== 'audio' && kind !== 'video') continue
+
+    streams.push({
+      id: `${kind}/send`,
+      codec: negotiatedCodec(transceiver.sender, kind),
+      keys: keys[kind].send,
+    })
+    streams.push({
+      id: `${kind}/recv`,
+      codec: negotiatedCodec(transceiver.receiver, kind),
+      keys: keys[kind].recv,
+    })
+  }
+
+  console.debug(
+    `[p2p] настройки потоков отправлены: ${streams.map((s) => `${s.id} (${s.codec})`).join(', ')}`,
+  )
+  worker.postMessage({ t: 'configure', streams })
 }
 
 /**

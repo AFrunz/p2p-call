@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PLAINTEXT_THRESHOLD, attachAll, detachAll, shouldDowngrade } from '../../src/call/transform.js'
+import {
+  PLAINTEXT_THRESHOLD,
+  attachAll,
+  configureStreams,
+  detachAll,
+  shouldDowngrade,
+} from '../../src/call/transform.js'
 import type { MediaKeys } from '../../src/crypto/kdf.js'
-
-/** Ключи здесь не используются по назначению — важно лишь, что они различимы. */
-const KEYS = {
-  audio: { send: 'audio-send', recv: 'audio-recv' },
-  video: { send: 'video-send', recv: 'video-recv' },
-} as unknown as MediaKeys
 
 interface FakeEndpoint {
   transform?: unknown
@@ -55,7 +55,7 @@ describe('attachAll', () => {
   it('шифрует и отправку, и приём каждой дорожки', () => {
     const audio = transceiver('audio')
     const video = transceiver('video')
-    expect(attachAll(worker, connectionOf([audio, video]), KEYS).attached).toBe(true)
+    expect(attachAll(worker, connectionOf([audio, video])).attached).toBe(true)
 
     expect(optionsOf(audio.sender)).toMatchObject({ kind: 'audio', direction: 'send' })
     expect(optionsOf(audio.receiver)).toMatchObject({ kind: 'audio', direction: 'recv' })
@@ -63,19 +63,12 @@ describe('attachAll', () => {
     expect(optionsOf(video.receiver)).toMatchObject({ kind: 'video', direction: 'recv' })
   })
 
-  it('берёт для каждого конца свой ключ: send одной стороны идёт в recv другой', () => {
-    const audio = transceiver('audio')
-    attachAll(worker, connectionOf([audio]), KEYS)
-
-    expect(optionsOf(audio.sender)['keys']).toBe('audio-send')
-    expect(optionsOf(audio.receiver)['keys']).toBe('audio-recv')
-  })
 
   it('шифрует отправителя без дорожки: её подставят позже, и она не должна уйти открытой', () => {
     // Обычное начало звонка: камеры нет вовсе, микрофон включат через минуту.
     // Пока отправитель пуст, тип известен только по трансиверу.
     const video = transceiver('video', null)
-    expect(attachAll(worker, connectionOf([video]), KEYS).attached).toBe(true)
+    expect(attachAll(worker, connectionOf([video])).attached).toBe(true)
 
     expect(optionsOf(video.sender)).toMatchObject({ kind: 'video', direction: 'send' })
   })
@@ -83,7 +76,7 @@ describe('attachAll', () => {
   it('разводит аудио и видео по разным потокам, иначе счётчики nonce столкнутся', () => {
     const audio = transceiver('audio')
     const video = transceiver('video')
-    attachAll(worker, connectionOf([audio, video]), KEYS)
+    attachAll(worker, connectionOf([audio, video]))
 
     expect(optionsOf(audio.sender)['streamId']).not.toBe(optionsOf(video.sender)['streamId'])
   })
@@ -93,7 +86,7 @@ describe('attachAll', () => {
     vi.stubGlobal('RTCRtpSender', { prototype: {} })
     vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    expect(attachAll(worker, connectionOf([transceiver('audio')]), KEYS).attached).toBe(false)
+    expect(attachAll(worker, connectionOf([transceiver('audio')])).attached).toBe(false)
   })
 
   it('не падает, когда браузер отказал одному концу, и продолжает с остальными', () => {
@@ -109,14 +102,14 @@ describe('attachAll', () => {
       },
     })
 
-    expect(attachAll(worker, connectionOf([audio, video]), KEYS).attached).toBe(false)
+    expect(attachAll(worker, connectionOf([audio, video])).attached).toBe(false)
     expect(optionsOf(video.sender)).toMatchObject({ kind: 'video' })
   })
 
   it('перечисляет потоки, от которых ждём подтверждения воркера', () => {
     // Успех конструктора трансформа ещё ничего не значит: воркер может не
     // запуститься, и кадры пойдут открытым текстом.
-    const result = attachAll(worker, connectionOf([transceiver('audio'), transceiver('video')]), KEYS)
+    const result = attachAll(worker, connectionOf([transceiver('audio'), transceiver('video')]))
 
     expect(result.streams.sort()).toEqual([
       'audio/recv',
@@ -138,12 +131,12 @@ describe('attachAll', () => {
       },
     })
 
-    expect(attachAll(worker, connectionOf([audio]), KEYS).streams).toEqual(['audio/recv'])
+    expect(attachAll(worker, connectionOf([audio])).streams).toEqual(['audio/recv'])
   })
 
   it('пропускает трансиверы без дорожки на приёме — тип там взять неоткуда', () => {
     const unknown = { sender: endpoint(null), receiver: endpoint(null) }
-    expect(attachAll(worker, connectionOf([unknown]), KEYS).attached).toBe(true)
+    expect(attachAll(worker, connectionOf([unknown])).attached).toBe(true)
     expect(unknown.sender.transform).toBeUndefined()
   })
 })
@@ -152,7 +145,7 @@ describe('detachAll', () => {
   it('снимает трансформ с обоих концов', () => {
     const audio = transceiver('audio')
     const connection = connectionOf([audio])
-    attachAll(worker, connection, KEYS)
+    attachAll(worker, connection)
     detachAll(connection)
 
     expect(audio.sender.transform).toBeNull()
@@ -215,5 +208,31 @@ describe('shouldDowngrade', () => {
         plaintext: PLAINTEXT_THRESHOLD * 10,
       }),
     ).toBe(false)
+  })
+})
+
+describe('configureStreams', () => {
+  it('досылает ключи и согласованный кодек по каждому концу', () => {
+    // Трансформ вешается до согласования: тогда кодек ещё неизвестен, а
+    // публичный ключ собеседника не приехал.
+    const posted: unknown[] = []
+    const spy = { postMessage: (message: unknown) => posted.push(message) } as unknown as Worker
+    vi.spyOn(console, 'debug').mockImplementation(() => {})
+
+    configureStreams(spy, connectionOf([transceiver('audio'), transceiver('video')]), {
+      audio: { send: 'audio-send', recv: 'audio-recv' },
+      video: { send: 'video-send', recv: 'video-recv' },
+    } as unknown as MediaKeys)
+
+    const message = posted[0] as { t: string; streams: { id: string; keys: string }[] }
+    expect(message.t).toBe('configure')
+    expect(message.streams.map((stream) => stream.id).sort()).toEqual([
+      'audio/recv',
+      'audio/send',
+      'video/recv',
+      'video/send',
+    ])
+    // Ключ отправки одной стороны обязан сойтись с ключом приёма другой.
+    expect(message.streams.find((stream) => stream.id === 'audio/send')?.keys).toBe('audio-send')
   })
 })

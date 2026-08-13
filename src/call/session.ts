@@ -44,7 +44,7 @@ import { StatsCollector, createConnection, preferFrameSafeVideo, waitForGatherin
 import type { CallStats } from './peer.js'
 import {
   attachAll,
-  attachTransform,
+  configureStreams,
   detachAll,
   detectTransformSupport,
   negotiatedCodec,
@@ -577,6 +577,8 @@ export class CallSession {
       console.debug(`[p2p] разбираемые видеокодеки поставлены вперёд: ${ordered}`)
     }
 
+    this.createTransforms(connection)
+
     connection.addEventListener('track', (event) => {
       this.remoteStream.addTrack(event.track)
       console.debug(
@@ -930,27 +932,19 @@ export class CallSession {
     void this.announceKeyCheck()
   }
 
-  private startTransforms(): boolean {
-    if (this.connection === null || this.keys === null) return false
+  /**
+   * Вешает шифрование сразу при создании соединения.
+   *
+   * Именно здесь, а не после обмена кодами: трансформ, навешенный на уже
+   * запущенный кодировщик, часть браузеров попросту не применяет — кадры идут
+   * мимо него открытым текстом, хотя воркер исправно рапортует о готовности.
+   * Ключей на этот момент ещё нет, они досылаются позже; кадры, пришедшие
+   * раньше, ждут в очереди потока.
+   */
+  private createTransforms(connection: RTCPeerConnection): void {
     if (detectTransformSupport() === 'none') {
       this.encryptionReason = 'unsupported'
-      return false
-    }
-
-    // Включать шифрование в одну сторону нельзя: собеседник отдаст шифртекст
-    // прямо в декодер — звук станет шумом, видео пропадёт.
-    if (!this.peerFrameEncryption) {
-      console.debug('[p2p] собеседник не умеет шифровать кадры — слой выключен с обеих сторон')
-      this.encryptionReason = 'peerUnsupported'
-      return false
-    }
-
-    // Разметку кадра мы разбираем только у VP8. Согласовалось другое — честнее
-    // остаться на транспортном шифровании, чем отдать поток, который собеседник
-    // не сможет прочесть ни одним кадром.
-    if (!this.videoCodecSupported()) {
-      this.encryptionReason = 'codecUnsupported'
-      return false
+      return
     }
 
     const worker = new Worker(new URL('../crypto/media-worker.js', import.meta.url), {
@@ -974,7 +968,7 @@ export class CallSession {
         codec?: string
       }
       if (data.t === 'attached') {
-        console.debug(`[p2p] шифрование включено: ${data.id} (${data.codec})`)
+        console.debug(`[p2p] трансформ принят воркером: ${data.id}`)
         this.onStreamAttached(String(data.id))
       }
       if (data.t !== 'stats') return
@@ -1005,17 +999,56 @@ export class CallSession {
       if (downgrade) this.downgradeEncryption()
     })
 
-    const { attached, streams } = attachAll(worker, this.connection, this.keys)
-    const silent = this.connection.getSenders().filter((sender) => sender.track === null).length
+    const { attached, streams } = attachAll(worker, connection)
     console.debug(
-      `[p2p] трансформ навешен: ${attached}, отправителей ${this.connection.getSenders().length}` +
-        ` (без дорожки ${silent}), получателей ${this.connection.getReceivers().length}`,
+      `[p2p] трансформ навешен: ${attached}, потоков ${streams.length},` +
+        ` отправителей ${connection.getSenders().length}`,
     )
 
     this.awaitedStreams = new Set(streams)
     this.awaitConfirmation()
     this.encryptionReason = attached ? 'active' : 'attachFailed'
-    return attached
+  }
+
+  /**
+   * Досылает ключи и согласованные кодеки — или снимает слой, если он не нужен.
+   *
+   * До этого момента кадры копятся в очереди воркера: пропустить их открытым
+   * текстом нельзя, ради этого слой и заводился.
+   */
+  private startTransforms(): boolean {
+    const worker = this.worker
+    if (worker === null || this.connection === null || this.keys === null) return false
+    if (this.encryptionReason === 'attachFailed') return false
+
+    // Включать шифрование в одну сторону нельзя: собеседник отдаст шифртекст
+    // прямо в декодер — звук станет шумом, видео пропадёт.
+    if (!this.peerFrameEncryption) {
+      console.debug('[p2p] собеседник не умеет шифровать кадры — слой выключен с обеих сторон')
+      return this.abandonTransforms('peerUnsupported')
+    }
+
+    // Разметку кадра мы разбираем только у VP8. Согласовалось другое — честнее
+    // остаться на транспортном шифровании, чем отдать поток, который собеседник
+    // не сможет прочесть ни одним кадром.
+    if (!this.videoCodecSupported()) return this.abandonTransforms('codecUnsupported')
+
+    configureStreams(worker, this.connection, this.keys)
+    this.encryptionReason = 'active'
+    return true
+  }
+
+  /** Снимает навешенные трансформы, когда шифровать кадры не будем. */
+  private abandonTransforms(reason: EncryptionReason): boolean {
+    if (this.connection !== null) detachAll(this.connection)
+    this.worker?.terminate()
+    this.worker = null
+    this.awaitedStreams.clear()
+    if (this.confirmTimer !== null) clearTimeout(this.confirmTimer)
+    this.confirmTimer = null
+
+    this.encryptionReason = reason
+    return false
   }
 
   /**
@@ -1350,22 +1383,9 @@ export class CallSession {
       ?.getTransceivers()
       .find((item) => item.receiver.track.kind === track.kind)?.sender
 
-    if (sender !== undefined) {
-      await sender.replaceTrack(track)
-
-      // Шифрование навешивается на отправителей при выводе ключей, а тогда у
-      // этого дорожки ещё не было — и она ушла бы открытым текстом прямо в
-      // расшифровщик собеседника.
-      const kind = track.kind === 'audio' ? 'audio' : 'video'
-      if (this.worker !== null && this.keys !== null && this.view.frameEncryption) {
-        attachTransform(this.worker, sender, {
-          kind,
-          direction: 'send',
-          codec: negotiatedCodec(sender, kind),
-          keys: this.keys[kind].send,
-        })
-      }
-    }
+    // Трансформ навешен на отправителя ещё при создании соединения и переживает
+    // подстановку дорожки — доставать его отдельно не нужно.
+    if (sender !== undefined) await sender.replaceTrack(track)
     this.localStream?.addTrack(track)
 
     const kind = track.kind === 'audio' ? 'audio' : 'video'
