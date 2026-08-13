@@ -191,11 +191,16 @@ function status(rowId: string, textId: string, key: string | null): void {
  * Пока иконка остаётся прежней, строка «сервер отвечает» читается как «всё ещё
  * проверяем» — противоположно тому, что произошло.
  */
-function statusResult(rowId: string, textId: string, key: string, icon: string): void {
+function statusResult(rowId: string, textId: string, key: string, ok: boolean): void {
   status(rowId, textId, key)
-  const current = iconIn(el(rowId))
-  if (current !== null) swapIcon(current, icon)
-  el(rowId).classList.remove('row--busy')
+
+  const row = el(rowId)
+  row.classList.remove('row--busy')
+  row.classList.toggle('row--ok', ok)
+  row.classList.toggle('row--bad', !ok)
+
+  const current = iconIn(row)
+  if (current !== null) swapIcon(current, ok ? 'circle-check' : 'circle-x')
 }
 
 // ------------------------------------------------- устройства и качество
@@ -1084,17 +1089,13 @@ function wire(): void {
 
     void withBusy('action-check-server', 'settings.checking', async () => {
       el('server-check-status').classList.add('row--busy')
+      el('server-check-status').classList.remove('row--ok', 'row--bad')
       const spinner = iconIn(el('server-check-status'))
       if (spinner !== null) swapIcon(spinner, 'loader-circle')
       status('server-check-status', 'server-check-text', 'settings.checking')
 
       const result = await probeSignaling(raw.trim())
-      statusResult(
-        'server-check-status',
-        'server-check-text',
-        reachabilityKey(result),
-        result === 'ok' ? 'circle-check' : 'circle-x',
-      )
+      statusResult('server-check-status', 'server-check-text', reachabilityKey(result), result === 'ok')
     })
   })
   on('action-remove-server', 'click', () => {

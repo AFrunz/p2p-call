@@ -126,6 +126,15 @@ svg {
   color: var(--muted);
 }
 
+/* Итог проверки: цвет несёт результат, крутиться тут больше нечему. */
+.row--ok svg {
+  color: var(--ok);
+}
+
+.row--bad svg {
+  color: var(--danger);
+}
+
 .row--busy span {
   color: var(--muted);
   font-size: 13px;

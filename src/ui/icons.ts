@@ -109,7 +109,12 @@ export function renderIcons(): void {
 export function swapIcon(node: Element, name: string): void {
   const replacement = document.createElement('i')
   replacement.setAttribute('data-lucide', name)
-  for (const className of node.classList) replacement.classList.add(className)
+  // Свои классы lucide проставляет сам по имени иконки. Перенести их значит
+  // оставить на новом узле правила старой: галочка, унаследовавшая
+  // lucide-loader-circle, продолжает крутиться.
+  for (const className of node.classList) {
+    if (!className.startsWith('lucide')) replacement.classList.add(className)
+  }
   // Идентификатор переносим тоже: иначе следующая смена состояния уже не
   // найдёт узел, и иконка застынет на втором значении.
   if (node.id.length > 0) replacement.id = node.id
