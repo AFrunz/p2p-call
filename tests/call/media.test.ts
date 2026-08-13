@@ -364,4 +364,23 @@ describe('сообщения модуля', () => {
       expect(Object.keys(item.params ?? {}).sort(), item.key).toEqual(expected.sort())
     }
   })
+
+  it('просит только нужный вид устройства, когда дорожку досдают в живой звонок', async () => {
+    // Включая микрофон, незачем зажигать камеру: индикатор загорится, батарея
+    // сядет, а на машине без камеры запрос ещё и споткнётся о её отсутствие.
+    const fake = provider()
+    await requestMedia({ preset: 'auto', kinds: ['audio'] }, fake)
+
+    expect(fake.calls.length).toBeGreaterThan(0)
+    for (const constraints of fake.calls) {
+      expect(constraints.video).toBe(false)
+    }
+  })
+
+  it('на запрос одного вида не отдаёт дорожки другого', async () => {
+    const media = await requestMedia({ preset: 'auto', kinds: ['video'] }, provider())
+
+    expect(media.stream.getVideoTracks()).toHaveLength(1)
+    expect(media.stream.getAudioTracks()).toHaveLength(0)
+  })
 })

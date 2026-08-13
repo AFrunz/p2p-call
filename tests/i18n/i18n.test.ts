@@ -284,4 +284,23 @@ describe('localeName', () => {
     for (const name of names) expect(name.trim()).not.toBe('')
     expect(new Set(names).size).toBe(names.length)
   })
+
+  it('объясняют каждое состояние шифрования: «транспортное» без причины читается как поломка', () => {
+    const reasons = [
+      'pending',
+      'active',
+      'unsupported',
+      'peerUnsupported',
+      'attachFailed',
+      'peerPlaintext',
+    ]
+
+    for (const locale of LOCALES) {
+      const words = dictionary(locale) as Record<string, string>
+      for (const reason of reasons) {
+        expect(words[`encryption.reason.${reason}`], `${locale}/${reason}`).toBeTruthy()
+      }
+      expect(words['encryption.kinds'], locale).toBeTruthy()
+    }
+  })
 })

@@ -300,6 +300,7 @@ async function toggleTrack(kind: 'audio' | 'video'): Promise<void> {
 async function acquireTrack(kind: 'audio' | 'video', stream: MediaStream): Promise<boolean> {
   const media = await requestMedia({
     preset: settings.quality,
+    kinds: [kind],
     ...(kind === 'video' ? { cameraId: settings.cameraId } : { microphoneId: settings.microphoneId }),
   })
 
@@ -614,6 +615,8 @@ function renderCall(view: SessionView): void {
   encryption.classList.toggle('badge--ok', view.frameEncryption)
   encryption.classList.toggle('badge--warn', !view.frameEncryption)
   setBadge('badge-encryption', t(view.frameEncryption ? 'encryption.e2ee' : 'encryption.transportOnly'))
+  el('encryption-tip').textContent =
+    `${t('encryption.kinds')} ${t('encryption.now')} ${t(`encryption.reason.${view.encryptionReason}`)}`
 
   // Раньше блок возвращался при каждой перерисовке статистики: показ был
   // привязан только к наличию фразы и не помнил, что её уже сверили.

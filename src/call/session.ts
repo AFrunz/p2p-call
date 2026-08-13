@@ -94,6 +94,20 @@ export type Phase =
  */
 export type EndReason = 'local' | 'peer' | 'lost'
 
+/**
+ * Почему сквозное шифрование кадров включено или нет.
+ *
+ * Пользователю мало флажка: «транспортное шифрование» без причины читается как
+ * поломка, хотя чаще это осознанный откат ради работающего звонка.
+ */
+export type EncryptionReason =
+  | 'pending'
+  | 'active'
+  | 'unsupported'
+  | 'peerUnsupported'
+  | 'attachFailed'
+  | 'peerPlaintext'
+
 export interface SessionView {
   phase: Phase
   endReason: EndReason | null
@@ -106,6 +120,8 @@ export interface SessionView {
   sas: string[] | null
   /** Работает ли сквозное шифрование кадров поверх штатного DTLS-SRTP. */
   frameEncryption: boolean
+  /** Почему шифрование кадров сейчас в таком состоянии — для пояснения в интерфейсе. */
+  encryptionReason: EncryptionReason
   network: NetworkReport | null
   /** Когда начнётся проверка пар. null — расписание не назначено. */
   startAt: number | null
@@ -172,6 +188,7 @@ export class CallSession {
     inviteLink: null,
     sas: null,
     frameEncryption: false,
+    encryptionReason: 'pending',
     network: null,
     startAt: null,
     iceState: null,
@@ -194,6 +211,7 @@ export class CallSession {
   private remotePublicKey: Bytes | null = null
   /** Умеет ли собеседник шифровать кадры. Включаем слой только если оба. */
   private peerFrameEncryption = false
+  private encryptionReason: EncryptionReason = 'pending'
   private keys: MediaKeys | null = null
 
   private localStream: MediaStream | null = null
@@ -873,17 +891,22 @@ export class CallSession {
     const sas = await deriveSas(secret, localFingerprint, remoteFingerprint)
     const frameEncryption = this.startTransforms()
 
-    this.patch({ sas, frameEncryption })
+    this.patch({ sas, frameEncryption, encryptionReason: this.encryptionReason })
+    this.announceEncryption()
   }
 
   private startTransforms(): boolean {
     if (this.connection === null || this.keys === null) return false
-    if (detectTransformSupport() === 'none') return false
+    if (detectTransformSupport() === 'none') {
+      this.encryptionReason = 'unsupported'
+      return false
+    }
 
     // Включать шифрование в одну сторону нельзя: собеседник отдаст шифртекст
     // прямо в декодер — звук станет шумом, видео пропадёт.
     if (!this.peerFrameEncryption) {
       console.debug('[p2p] собеседник не умеет шифровать кадры — слой выключен с обеих сторон')
+      this.encryptionReason = 'peerUnsupported'
       return false
     }
 
@@ -933,6 +956,7 @@ export class CallSession {
       `[p2p] трансформ навешен: ${attached}, отправителей ${this.connection.getSenders().length}` +
         ` (без дорожки ${silent}), получателей ${this.connection.getReceivers().length}`,
     )
+    this.encryptionReason = attached ? 'active' : 'attachFailed'
     return attached
   }
 
@@ -1038,6 +1062,7 @@ export class CallSession {
       for (const kind of ['audio', 'video'] as const) {
         this.sendControl({ t: 'mute', kind, muted: this.view.muted[kind] })
       }
+      this.announceEncryption()
     })
 
     channel.addEventListener('message', (event) => {
@@ -1052,6 +1077,14 @@ export class CallSession {
         // селектор качества управлял бы тем, чего человек не видит.
         console.debug(`[p2p] собеседник просит качество ${control.preset}`)
         void this.applyPeerQuality(control.preset)
+      }
+      if (control.t === 'encryption') {
+        // Свой слой шифрования видно по журналу, а чужой — только с его слов.
+        // Без этого односторонний открытый текст выглядит как наша поломка.
+        console.debug(
+          `[p2p] собеседник о шифровании кадров: навешено ${control.attached}` +
+            `, поддержка ${control.support}`,
+        )
       }
       if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
       if (control.t === 'bye') this.endCall('peer')
@@ -1081,7 +1114,12 @@ export class CallSession {
     this.worker?.terminate()
     this.worker = null
 
-    this.patch({ frameEncryption: false, notice: message('session.encryptionDowngraded') })
+    this.encryptionReason = 'peerPlaintext'
+    this.patch({
+      frameEncryption: false,
+      encryptionReason: 'peerPlaintext',
+      notice: message('session.encryptionDowngraded'),
+    })
   }
 
   private onPeerFrames(ok: number, failed: number): void {
@@ -1089,6 +1127,21 @@ export class CallSession {
     if (ok > 0 || failed < 100) return
 
     this.patch({ notice: message('session.peerCannotDecrypt') })
+  }
+
+  /**
+   * Рассказывает собеседнику, удалось ли нам навесить шифрование.
+   *
+   * Согласование в конверте говорит лишь о намерении: браузер может заявить
+   * поддержку и всё равно не применить трансформ. Тогда одна сторона шлёт
+   * открытый текст, а вторая гадает, что сломалось у неё.
+   */
+  private announceEncryption(): void {
+    this.sendControl({
+      t: 'encryption',
+      attached: this.view.frameEncryption,
+      support: detectTransformSupport(),
+    })
   }
 
   private sendControl(control: ControlMessage): void {

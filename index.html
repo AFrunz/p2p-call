@@ -283,9 +283,10 @@
 
       <div class="call__top">
         <div class="badges">
-          <span class="badge badge--ok" id="badge-encryption">
+          <button type="button" class="badge badge--ok badge--explained" id="badge-encryption">
             <i data-lucide="shield-check"></i><span data-i18n="call.e2ee">сквозное шифрование</span>
-          </span>
+            <span class="tooltip" id="encryption-tip" role="tooltip"></span>
+          </button>
           <span class="badge" id="badge-connection">
             <i data-lucide="zap"></i><span>—</span>
           </span>

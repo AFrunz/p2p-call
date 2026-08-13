@@ -62,6 +62,14 @@ export interface MediaRequest {
   preset: QualityPreset
   cameraId?: string | null
   microphoneId?: string | null
+  /**
+   * Какие устройства нужны. По умолчанию оба вида.
+   *
+   * Досдача одной дорожки во время звонка должна трогать только её: включая
+   * микрофон, незачем зажигать камеру, а на машине без камеры незачем и
+   * спотыкаться о её отсутствие.
+   */
+  kinds?: readonly MediaKind[]
 }
 
 export interface MediaResult {
@@ -142,9 +150,11 @@ export async function requestMedia(
 
   // Пробуем по отдельности: возможно, доступен только один вид устройств.
   const relaxed = hasSavedDevice ? { preset: request.preset } : request
+  const wantsVideo = videoConstraints(relaxed) !== false
+  const wantsAudio = audioConstraints(relaxed) !== false
   const [videoStream, audioStream] = await Promise.all([
-    attempt(provider, { video: videoConstraints(relaxed), audio: false }),
-    attempt(provider, { video: false, audio: audioConstraints(relaxed) }),
+    wantsVideo ? attempt(provider, { video: videoConstraints(relaxed), audio: false }) : null,
+    wantsAudio ? attempt(provider, { video: false, audio: audioConstraints(relaxed) }) : null,
   ])
 
   if (videoStream === null && audioStream === null) {
@@ -197,13 +207,17 @@ async function attempt(
   }
 }
 
-function videoConstraints(request: MediaRequest): MediaTrackConstraints {
+function videoConstraints(request: MediaRequest): MediaTrackConstraints | false {
+  if (request.kinds !== undefined && !request.kinds.includes('video')) return false
+
   const constraints: MediaTrackConstraints = { ...presetToConstraints(request.preset) }
   if (request.cameraId != null) constraints.deviceId = { exact: request.cameraId }
   return constraints
 }
 
-function audioConstraints(request: MediaRequest): MediaTrackConstraints {
+function audioConstraints(request: MediaRequest): MediaTrackConstraints | false {
+  if (request.kinds !== undefined && !request.kinds.includes('audio')) return false
+
   const constraints: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true }
   if (request.microphoneId != null) constraints.deviceId = { exact: request.microphoneId }
   return constraints

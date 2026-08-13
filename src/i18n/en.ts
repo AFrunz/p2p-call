@@ -275,4 +275,12 @@ export const en: Record<string, string> = {
   'stats.fps': 'fps',
   'call.selfMicOff': 'your microphone is off',
   'stats.mic': 'microphone',
+  'encryption.kinds': "There are two layers here. Transport encryption (DTLS-SRTP) is present in every call and cannot be turned off: it hides the traffic from everyone but your peer, though a relaying server is in principle able to strip it. End-to-end encryption encrypts every frame separately with a key derived on your devices and never sent anywhere — not even our server can read such a call.",
+  'encryption.now': "Right now:",
+  'encryption.reason.active': "both layers are working. Read the phrase out loud to each other — it proves the key was derived with your peer and not with someone in between.",
+  'encryption.reason.pending': "the layers are still being negotiated.",
+  'encryption.reason.unsupported': "transport only: your browser cannot encrypt frames. A recent Chrome, Firefox or Safari will.",
+  'encryption.reason.peerUnsupported': "transport only: your peer's browser cannot encrypt frames. Enabling the layer one-way is not an option — the other side would receive noise instead of sound.",
+  'encryption.reason.attachFailed': "transport only: the browser refused to attach encryption to the tracks. See the console for details.",
+  'encryption.reason.peerPlaintext': "transport only: your peer was sending frames unencrypted, so the layer had to be dropped — otherwise the call would stay broken. A working call on transport encryption is more honest than a broken one on end-to-end.",
 }

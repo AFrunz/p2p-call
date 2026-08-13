@@ -1,6 +1,11 @@
 import { isQualityPreset } from '../media/quality.js'
 import type { QualityPreset } from '../media/quality.js'
 
+/** Как собеседник шифрует кадры — знать это можно только с его слов. */
+export type TransformSupportName = 'script-transform' | 'encoded-streams' | 'none'
+
+const SUPPORT_NAMES: readonly string[] = ['script-transform', 'encoded-streams', 'none']
+
 /**
  * Служебные сообщения поверх DataChannel. Приходят от собеседника, поэтому
  * decodeMessage возвращает null на любом отклонении от схемы.
@@ -12,6 +17,7 @@ export type ControlMessage =
   | { t: 'ping'; ts: number }
   | { t: 'pong'; ts: number }
   | { t: 'frames'; ok: number; failed: number }
+  | { t: 'encryption'; attached: boolean; support: TransformSupportName }
   | { t: 'bye' }
 
 export function encodeMessage(message: ControlMessage): string {
@@ -62,6 +68,13 @@ export function decodeMessage(raw: string): ControlMessage | null {
       const failed = source['failed']
       if (!isCount(ok) || !isCount(failed)) return null
       return { t: 'frames', ok, failed }
+    }
+    case 'encryption': {
+      const attached = source['attached']
+      const support = source['support']
+      if (typeof attached !== 'boolean') return null
+      if (typeof support !== 'string' || !SUPPORT_NAMES.includes(support)) return null
+      return { t: 'encryption', attached, support: support as TransformSupportName }
     }
     case 'bye':
       return { t: 'bye' }

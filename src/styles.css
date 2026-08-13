@@ -1011,6 +1011,55 @@ svg {
   color: #1a1408;
 }
 
+/* Бейдж с пояснением: состояний у шифрования несколько, и одно слово их не различает. */
+.badge--explained {
+  position: relative;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: help;
+}
+
+.tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #0d1017f2;
+  color: #e8ecf4;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px #0009;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+
+.badge--explained:hover .tooltip,
+.badge--explained:focus-visible .tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* У правого края экрана всплывающее окно уезжает за границу — прижимаем вправо. */
+.badges > .badge--explained:last-child .tooltip {
+  left: auto;
+  right: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip {
+    transition: none;
+  }
+}
+
 .stats-chip {
   display: flex;
   flex-wrap: wrap;
@@ -1408,7 +1457,56 @@ svg {
       calc(14px + env(safe-area-inset-left));
   }
 
-  .stats-chip {
+  /* Бейдж с пояснением: состояний у шифрования несколько, и одно слово их не различает. */
+.badge--explained {
+  position: relative;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: help;
+}
+
+.tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #0d1017f2;
+  color: #e8ecf4;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px #0009;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+
+.badge--explained:hover .tooltip,
+.badge--explained:focus-visible .tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* У правого края экрана всплывающее окно уезжает за границу — прижимаем вправо. */
+.badges > .badge--explained:last-child .tooltip {
+  left: auto;
+  right: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip {
+    transition: none;
+  }
+}
+
+.stats-chip {
     gap: 14px;
     justify-content: flex-start;
   }
