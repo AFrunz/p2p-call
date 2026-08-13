@@ -216,6 +216,11 @@ function statusResult(rowId: string, textId: string, key: string, ok: boolean): 
  * громкость по своей шкале. Раньше это снималось только закрытием вкладки.
  */
 function releaseMedia(): void {
+  // Сессия гасит захват сама, но полагаться только на неё нельзя: если она
+  // умерла, не дойдя до разбора, индикаторы записи останутся гореть до
+  // закрытия вкладки. Останавливаем всё, до чего дотягиваемся.
+  stopStream(session?.media.local ?? null)
+
   for (const id of ['remote-video', 'local-video', 'waiting-video']) attachStream(id, null)
 
   renderToggleIcons(false, false)
