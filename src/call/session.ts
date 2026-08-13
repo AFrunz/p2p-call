@@ -984,9 +984,6 @@ export class CallSession {
       // Своих счётчиков он не видит: до его консоли обычно не добраться.
       if (data.id === 'audio/send') this.encryptedFrames.audio = data.ok ?? 0
       if (data.id === 'video/send') this.encryptedFrames.video = data.ok ?? 0
-      if (data.id?.endsWith('/send') === true) {
-        this.sendControl({ t: 'encrypted', ...this.encryptedFrames })
-      }
 
       console.debug(
         `[p2p] кадры ${data.id}: обработано ${data.ok}, отброшено ${data.failed}` +
@@ -1139,6 +1136,10 @@ export class CallSession {
     this.statsTimer ??= setInterval(() => {
       if (this.connection === null) return
       void this.stats.sample(this.connection).then((stats) => this.patch({ stats }))
+
+      // Отправляем и нули: молчание неотличимо от «зашифровал ноль кадров», а
+      // разница между этими случаями и есть весь смысл отчёта.
+      this.sendControl({ t: 'encrypted', ...this.encryptedFrames })
     }, 1000)
 
     // Ротация ключей: воркер сам догоняет поколение по идентификатору в кадре.
