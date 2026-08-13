@@ -54,6 +54,13 @@ let session: CallSession | null = null
 let stepsKind: 'direct' | 'server' = 'direct'
 /** Свой код уже скопирован: по этому переходим ко второму шагу мастера. */
 let lastCopied = false
+/**
+ * Второй шаг начат, но код ещё готовится.
+ *
+ * Без этого счётчик шагов успевает мигнуть единицей: чужой код уже принят, а
+ * свой ответный собирается несколько секунд.
+ */
+let pendingStep = false
 /** Последний вид сессии: нужен, чтобы перерисовать мастер, не дожидаясь события. */
 let lastView: SessionView | null = null
 /** Слой шифрования в прошлой перерисовке — по нему ловим переключение. */
@@ -440,35 +447,40 @@ function renderExchange(view: SessionView): void {
   const hasOutgoing = view.outgoingCode !== null
   const holding = session?.isHoldingCandidates ?? false
 
+  // Отсчёт идёт — значит коды разошлись и человек больше ничего не вводит.
+  const counting = holding || view.phase === 'connecting'
+
   // Шаг определяется тем, что уже сделано, а не отдельным счётчиком: так
   // возврат назад и обновление кода не сбивают нумерацию.
-  // Коды разошлись — дальше делать нечего, идёт отсчёт. Это отдельное
-  // состояние: обе карточки прячем, чтобы человек не искал, что ещё нажать.
-  const counting = holding || view.phase === 'connecting'
-  const step = responder ? (hasOutgoing ? 2 : 1) : hasOutgoing && lastCopied ? 2 : 1
+  const step = (responder ? hasOutgoing || pendingStep : lastCopied) ? 2 : 1
+
+  // Отвечающий обязан видеть свой ответный код рядом с отсчётом: без него
+  // собеседник не подключится, а время уже идёт. Создающий на этом шаге уже
+  // всё отдал и всё принял — ему остаётся только ждать.
+  const showOutgoing = hasOutgoing && (responder || step === 1)
+  const showIncoming = !counting && (responder ? step === 1 : step === 2)
 
   setText('exchange-step-label', t('exchange.step', { current: step, total: 2 }))
   el('progress-2').classList.toggle('is-done', step === 2)
 
+  show('waiting-block', counting)
+  show('outgoing-block', showOutgoing)
+  show('incoming-block', showIncoming)
+  show('exchange-next', !counting && step === 1)
+  show('exchange-done', step === 2 && !showOutgoing)
+  if (showIncoming || showOutgoing) {
+    placeNextAfter(showIncoming && responder ? 'incoming-block' : 'outgoing-block')
+  }
+
   // Открытое поле принадлежит прошлому шагу: на новом оно только мешает.
-  if (counting) {
+  if (!showOutgoing) {
     show('outgoing-code', false)
     setText('action-show-outgoing', t('exchange.show'))
   }
 
-  show('waiting-block', counting)
-  show('outgoing-block', !counting && hasOutgoing && (responder ? step === 2 : step === 1))
-  show('incoming-block', !counting && (responder ? step === 1 : step === 2))
-  show('exchange-next', !counting && step === 1)
-  show('exchange-done', !counting && step === 2)
-  if (!counting) placeNextAfter(responder ? 'incoming-block' : 'outgoing-block')
-
   setText('exchange-done-text', t(responder ? 'exchange.doneIncoming' : 'exchange.doneOutgoing'))
   show('action-show-outgoing', !responder)
-  setText(
-    'exchange-next-text',
-    t(responder ? 'exchange.nextOutgoing' : 'exchange.nextIncoming'),
-  )
+  setText('exchange-next-text', t(responder ? 'exchange.nextOutgoing' : 'exchange.nextIncoming'))
   setText('outgoing-label', t(responder ? 'exchange.answerTitle' : 'exchange.yourCode'))
 
   if (view.outgoingCode !== null) {
@@ -524,6 +536,7 @@ function showJoinStep(): void {
   show('exchange-next', true)
   placeNextAfter('incoming-block')
 
+  pendingStep = false
   el<HTMLTextAreaElement>('incoming-code').placeholder = t('exchange.joinPlaceholder')
   setText('exchange-next-text', t('exchange.nextOutgoing'))
   setText('exchange-foot-text', t('exchange.footClock'))
@@ -863,6 +876,7 @@ function forgetSession(): void {
   session = null
   lastPhase = null
   lastCopied = false
+  pendingStep = false
   lastView = null
   countdownUntil = null
 
@@ -1274,6 +1288,11 @@ function wire(): void {
   on('action-accept', 'click', () => {
     const input = el<HTMLTextAreaElement>('incoming-code').value.trim()
     if (input.length === 0) return toast(t('toast.pasteCode'))
+
+    // Шаг переключаем сразу: чужой код принят, дальше собирается свой ответный,
+    // и мигать единицей в счётчике на этом месте незачем.
+    pendingStep = true
+    if (lastView !== null) renderExchange(lastView)
 
     void withBusy('action-accept', 'exchange.connecting', async () => {
       const created = session ?? newSession()
