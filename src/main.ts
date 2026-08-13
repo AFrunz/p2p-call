@@ -449,6 +449,10 @@ function renderIncoming(): void {
  * запускается сразу, поэтому предупреждение об этом стоит до, а не после.
  */
 function renderExchange(view: SessionView): void {
+  // В режиме со ссылкой кодами не обмениваются вовсе: мастеру здесь нечего
+  // показывать, а его переход на экран отсчёта уводил бы человека из звонка.
+  if (view.inviteLink !== null) return
+
   const responder = view.role === 'responder'
   const hasOutgoing = view.outgoingCode !== null
   const holding = session?.isHoldingCandidates ?? false
