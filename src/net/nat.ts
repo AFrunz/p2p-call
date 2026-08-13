@@ -157,22 +157,35 @@ export function isMdnsAddress(address: string): boolean {
   return /\.local$/i.test(address.trim())
 }
 
-export type ConnectionKind = 'local' | 'direct' | 'relay'
+/**
+ * `local` — локальная сеть, наружу трафик не выходит.
+ * `ipv6`  — прямая связь по глобальным IPv6, NAT не участвует.
+ * `nat`   — пробились через отображение портов либо host-host по публичному IPv4.
+ * `relay` — через TURN, весь трафик идёт сквозь сервер.
+ */
+export type ConnectionRoute = 'local' | 'ipv6' | 'nat' | 'relay'
 
-/** Классифицирует установленное соединение по типам кандидатов выбранной пары. */
-export function classifyConnection(
-  local: CandidateType,
-  remote: CandidateType,
-  localAddress: string,
-): ConnectionKind {
-  if (local === 'relay' || remote === 'relay') return 'relay'
+/** Выбранная пара ICE-кандидатов: тип и адрес с обеих сторон. */
+export interface SelectedPair {
+  localType: CandidateType
+  localAddress: string
+  remoteType: CandidateType
+  remoteAddress: string
+}
 
-  // host-host бывает и локальной сетью, и прямой связью по публичному IPv6.
-  if (local === 'host' && remote === 'host') {
-    return isMdnsAddress(localAddress) || isPrivateAddress(localAddress) ? 'local' : 'direct'
+/** Определяет, каким путём прошло соединение, по выбранной паре кандидатов. */
+export function classifyConnection(pair: SelectedPair): ConnectionRoute {
+  if (pair.localType === 'relay' || pair.remoteType === 'relay') return 'relay'
+
+  // host-host бывает и локальной сетью, и прямой связью по публичному адресу.
+  if (pair.localType === 'host' && pair.remoteType === 'host') {
+    if (isMdnsAddress(pair.localAddress) || isPrivateAddress(pair.localAddress)) return 'local'
   }
 
-  return 'direct'
+  // Глобальный IPv6 с обеих сторон — связь без всякого отображения адресов.
+  if (isGlobalIpv6(pair.localAddress) && isGlobalIpv6(pair.remoteAddress)) return 'ipv6'
+
+  return 'nat'
 }
 
 function isPrivateAddress(address: string): boolean {

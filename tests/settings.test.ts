@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
+  frameRateOptions,
   loadSettings,
   qualityOptions,
   saveSettings,
   validateServerUrl,
 } from '../src/settings.js'
-import { QUALITY_PRESETS } from '../src/media/quality.js'
+import { FRAME_RATES, QUALITY_PRESETS } from '../src/media/quality.js'
 
 /** Хранилище в памяти, чтобы не тащить в тесты jsdom. */
 function storage(initial: Record<string, string> = {}): Storage {
@@ -78,6 +79,7 @@ describe('loadSettings', () => {
       signalingServer: 'wss://call.example.com/ws',
       locale: 'en' as const,
       quality: '720p' as const,
+      frameRate: 60 as const,
       cameraId: 'cam-1',
       microphoneId: 'mic-1',
       connectDelay: 120,
@@ -135,6 +137,47 @@ describe('qualityOptions', () => {
 
     for (const option of options) {
       expect(option.labelKey, option.value).toBe(`quality.${option.value}`)
+    }
+  })
+})
+
+describe('частота кадров', () => {
+  it('по умолчанию тридцать кадров — их тянет любая камера', () => {
+    expect(loadSettings(storage()).frameRate).toBe(30)
+  })
+
+  it('переживает round-trip', () => {
+    const store = storage()
+    saveSettings(store, { ...DEFAULT_SETTINGS, frameRate: 60 })
+    expect(loadSettings(store).frameRate).toBe(60)
+  })
+
+  it('выбрасывает испорченное значение вместо того, чтобы им пользоваться', () => {
+    // Подложенный ноль остановил бы картинку, а строка уехала бы в ограничения
+    // камеры и сломала бы захват целиком.
+    for (const raw of [0, 24, 1000, -30, 59.94, '60', null, {}]) {
+      const store = storage({ 'p2p-call/settings/v1': JSON.stringify({ frameRate: raw }) })
+      expect(loadSettings(store).frameRate, JSON.stringify(raw)).toBe(30)
+    }
+  })
+
+  it('не зависит от разрешения: обе оси хранятся отдельно', () => {
+    const store = storage({
+      'p2p-call/settings/v1': JSON.stringify({ quality: '4k', frameRate: 60 }),
+    })
+    const settings = loadSettings(store)
+
+    expect(settings.quality).toBe(DEFAULT_SETTINGS.quality)
+    expect(settings.frameRate).toBe(60)
+  })
+
+  it('предлагает интерфейсу все объявленные частоты с общей подписью', () => {
+    const options = frameRateOptions()
+    expect(options.map((option) => option.value)).toEqual([...FRAME_RATES])
+
+    for (const option of options) {
+      expect(option.labelKey, String(option.value)).toBe('quality.fps')
+      expect(option.params, String(option.value)).toEqual({ value: option.value })
     }
   })
 })

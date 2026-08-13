@@ -1,5 +1,5 @@
 import { classifyConnection } from '../net/nat.js'
-import type { ConnectionKind } from '../net/nat.js'
+import type { ConnectionRoute } from '../net/nat.js'
 import type { CandidateType } from '../signaling/types.js'
 
 /** Сколько ждём полного сбора кандидатов, прежде чем показать код. */
@@ -101,7 +101,8 @@ export interface CallStats {
   roundTripMs: number | null
   /** Доля потерянных пакетов на приёме, 0..1. */
   packetLoss: number
-  kind: ConnectionKind | null
+  /** Каким путём прошло соединение. null — пара кандидатов ещё не выбрана. */
+  route: ConnectionRoute | null
   /** Разрешение принимаемого видео. */
   frameWidth: number | null
   frameHeight: number | null
@@ -142,7 +143,7 @@ export class StatsCollector {
     let fps: number | null = null
     let jitterMs: number | null = null
     let micLevel: number | null = null
-    let kind: ConnectionKind | null = null
+    let route: ConnectionRoute | null = null
 
     const candidates = new Map<string, { type: CandidateType; address: string }>()
 
@@ -195,7 +196,12 @@ export class StatsCollector {
             const local = candidates.get(String(stat['localCandidateId']))
             const remote = candidates.get(String(stat['remoteCandidateId']))
             if (local !== undefined && remote !== undefined) {
-              kind = classifyConnection(local.type, remote.type, local.address)
+              route = classifyConnection({
+                localType: local.type,
+                localAddress: local.address,
+                remoteType: remote.type,
+                remoteAddress: remote.address,
+              })
             }
           }
           break
@@ -211,7 +217,7 @@ export class StatsCollector {
       ...rates,
       roundTripMs,
       packetLoss: total > 0 ? packetsLost / total : 0,
-      kind,
+      route,
       frameWidth,
       frameHeight,
       fps,

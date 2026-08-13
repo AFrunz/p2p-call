@@ -6,7 +6,7 @@ import { detectTransformSupport } from './call/transform.js'
 import { LOCALES, createTranslator, detectLocale, localeName } from './i18n/index.js'
 import type { Locale } from './i18n/index.js'
 import type { Message } from './i18n/message.js'
-import { isQualityPreset } from './media/quality.js'
+import { FRAME_RATES, QUALITY_PRESETS } from './media/quality.js'
 import { buildChecks } from './net/checks.js'
 import type { NetworkCheck } from './net/checks.js'
 import { probeNetwork } from './net/probe.js'
@@ -18,7 +18,6 @@ import {
   CONNECT_DELAYS,
   isConnectDelay,
   loadSettings,
-  qualityOptions,
   saveSettings,
   validateServerUrl,
 } from './settings.js'
@@ -51,23 +50,20 @@ let locale: Locale = settings.locale ?? detectLocale(navigator.languages)
 let t = createTranslator(locale)
 
 let session: CallSession | null = null
-/**
- * Подсказка под превью — ключами, а не готовым текстом.
- *
- * Узел переводится и статически, и кодом. Пока состояние жило прямо в DOM,
- * любая перерисовка переводов возвращала «запрашиваем доступ» поверх давно
- * полученного разрешения.
- */
-let previewHint: { key: string } | { parts: Message[] } = { key: 'preview.requesting' }
+/** Какой список шагов показан сейчас — нужен при смене языка. */
+let stepsKind: 'direct' | 'server' = 'direct'
+/** Свой код уже скопирован: по этому переходим ко второму шагу мастера. */
+let lastCopied = false
 /** Слой шифрования в прошлой перерисовке — по нему ловим переключение. */
 let lastFrameEncryption: boolean | null = null
 
 /** Сколько молчим на переключении слоя, мс. */
 const ENCRYPTION_SWITCH_MUTE_MS = 400
+
+/** Сколько висит уведомление о подключении собеседника, мс. */
+const PEER_JOINED_MS = 4000
 let unsubscribe: (() => void) | null = null
-let previewStream: MediaStream | null = null
 let network: NetworkReport | null = null
-let passphrase: string | null = null
 let inviteLink = ''
 
 let lastPhase: SessionView['phase'] | null = null
@@ -112,13 +108,11 @@ function setLocale(next: Locale): void {
   saveSettings(localStorage, settings)
 
   applyTranslations()
-  fillQuality()
+  renderQualityPanel()
   fillDelay()
   renderLangs()
   renderChecks()
   renderServerPanel()
-  renderPassphrase()
-  renderPreviewHint()
   renderIcons()
 }
 
@@ -191,127 +185,65 @@ function status(rowId: string, textId: string, key: string | null): void {
   if (key !== null) setText(textId, t(key))
 }
 
-// -------------------------------------------------------------------- превью
-
-async function startPreview(): Promise<void> {
-  if (previewStream !== null) return
-
-  const media = await requestMedia({
-    preset: settings.quality,
-    cameraId: settings.cameraId,
-    microphoneId: settings.microphoneId,
-  })
-  previewStream = media.stream
-
-  // Разрешение получено, но в эфир не идём: включить себя — осознанное действие.
-  for (const track of media.stream.getTracks()) track.enabled = false
-
-  attachStream('preview-video', previewStream)
-  renderPreviewState()
-  setPreviewHint({ key: 'preview.off' })
-
-  if (media.ignoredSavedDevice) {
-    settings = { ...settings, cameraId: null, microphoneId: null }
-    saveSettings(localStorage, settings)
-    toast(t('toast.savedDeviceGone'))
-  }
-
-  // К причине добавляем перепись устройств: «камер: 0, микрофонов: 1» сразу
-  // отделяет отсутствие железа от невыданного разрешения.
-  const explanation = [media.problem?.text ?? describeMissing(media.missing), media.problem?.details]
-    .filter((part): part is Message => part != null)
-
-  if (explanation.length > 0) setPreviewHint({ parts: explanation })
-
-  await fillDevices()
-  syncAvailability()
-}
+// ------------------------------------------------- устройства и качество
 
 /**
  * Отпускает захват после звонка.
  *
  * Пока микрофон захвачен, телефон держит режим разговора: динамик в разговорный,
  * громкость по своей шкале. Раньше это снималось только закрытием вкладки.
- * Камеру и микрофон вернёт первое же нажатие на тумблер.
  */
 function releaseMedia(): void {
-  for (const id of ['remote-video', 'local-video', 'preview-video']) attachStream(id, null)
-
-  stopStream(previewStream)
-  previewStream = null
+  for (const id of ['remote-video', 'local-video', 'waiting-video']) attachStream(id, null)
 
   renderToggleIcons(false, false)
-  setPressed('toggle-mic', false)
-  setPressed('toggle-cam', false)
-  setPreviewHint({ key: 'preview.off' })
-  show('preview-off', true)
-}
-
-function setPreviewHint(hint: typeof previewHint): void {
-  previewHint = hint
-  renderPreviewHint()
-}
-
-function renderPreviewHint(): void {
-  setText(
-    'preview-hint',
-    'key' in previewHint ? t(previewHint.key) : previewHint.parts.map(tm).join(' '),
-  )
-}
-
-function renderPreviewState(): void {
-  const camera = previewStream?.getVideoTracks()[0]
-  show('preview-off', camera?.enabled !== true)
-}
-
-function syncAvailability(): void {
-  const hasAudio = (previewStream?.getAudioTracks().length ?? 0) > 0
-  const hasVideo = (previewStream?.getVideoTracks().length ?? 0) > 0
-
-  // Кнопки не блокируем: нажатие — это ещё одна попытка получить устройство.
-  el('toggle-mic').title = hasAudio ? '' : t('controls.micUnavailable')
-  el('toggle-cam').title = hasVideo ? '' : t('controls.camUnavailable')
+  setPressed('call-mic', false)
+  setPressed('call-cam', false)
+  show('pip-off', true)
+  closePanels()
 }
 
 /**
- * Микрофон и камера переключаются одной ручкой и на главном экране, и в звонке.
- * Источник правды — дорожки локального потока, поэтому состояние берём из них.
+ * Микрофон и камера переключаются одной ручкой.
+ *
+ * Источник правды — дорожки локального потока: состояние кнопки выводится из
+ * них, а не хранится отдельно, иначе после досдачи дорожки они разъезжаются.
  */
 async function toggleTrack(kind: 'audio' | 'video'): Promise<void> {
-  // После звонка захвата нет вовсе: заводим пустой поток, его наполнит
-  // acquireTrack. Так первое нажатие возвращает устройство без перезагрузки.
-  if (session === null && previewStream === null) previewStream = new MediaStream()
+  const stream = session?.media.local
+  if (stream === null || stream === undefined) return
 
-  const stream = session?.media.local ?? previewStream
-  let tracks = kind === 'audio' ? stream?.getAudioTracks() : stream?.getVideoTracks()
+  let tracks = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
 
   // Устройства могло не быть при захвате — занята камера, отозвано разрешение.
-  // Спрашиваем ещё раз по нажатию, а не выключаем кнопку до конца сеанса.
-  if (stream !== null && stream !== undefined && (tracks === undefined || tracks.length === 0)) {
+  // Спрашиваем ещё раз по нажатию, а не выключаем кнопку до конца звонка.
+  if (tracks.length === 0) {
     const added = await acquireTrack(kind, stream)
     if (!added) return
     tracks = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
   }
-  if (tracks === undefined || tracks.length === 0) return
+  if (tracks.length === 0) return
 
   const enabled = !(tracks[0]?.enabled ?? false)
   for (const track of tracks) track.enabled = enabled
 
   session?.setMuted(kind, !enabled)
-  setPressed(kind === 'audio' ? 'toggle-mic' : 'toggle-cam', enabled)
   setPressed(kind === 'audio' ? 'call-mic' : 'call-cam', enabled)
   renderToggleIcons(
     kind === 'audio' ? enabled : toggleIcons.audio,
     kind === 'video' ? enabled : toggleIcons.video,
   )
-  renderPreviewState()
-  show('pip-off', kind === 'video' ? !enabled : el('pip-off').hidden === false)
+  if (kind === 'video') {
+    show('pip-off', !enabled)
+    show('waiting-off', !enabled)
+  }
 }
 
 /** Досдаёт одну дорожку в уже живой поток. */
 async function acquireTrack(kind: 'audio' | 'video', stream: MediaStream): Promise<boolean> {
   const media = await requestMedia({
     preset: settings.quality,
+    frameRate: settings.frameRate,
     kinds: [kind],
     ...(kind === 'video' ? { cameraId: settings.cameraId } : { microphoneId: settings.microphoneId }),
   })
@@ -325,36 +257,200 @@ async function acquireTrack(kind: 'audio' | 'video', stream: MediaStream): Promi
 
   track.enabled = false
   stream.addTrack(track)
-  if (session !== null) await session.attachTrack(track)
-  else attachStream('preview-video', stream)
-
-  syncAvailability()
+  await session?.attachTrack(track)
   return true
+}
+
+/** Строка выбора во всплывающей панели: подпись и галочка у выбранного. */
+function optionRow(label: string, active: boolean, onPick: () => void): HTMLButtonElement {
+  const row = document.createElement('button')
+  row.type = 'button'
+  row.className = active ? 'option is-active' : 'option'
+
+  const text = document.createElement('span')
+  text.textContent = label
+  const mark = document.createElement('i')
+  mark.setAttribute('data-lucide', 'check')
+
+  row.append(text, mark)
+  row.addEventListener('click', onPick)
+  return row
 }
 
 async function fillDevices(): Promise<void> {
   const devices = await listDevices()
-  const auto = { value: '', label: t('devices.default') }
+  const auto = t('devices.default')
 
   // Живое имя от браузера переводить нечего, а безымянному устройству модуль
   // отдаёт ключ с номером — отсюда разбор по типу.
-  const option = (item: DeviceOption) => ({
-    value: item.deviceId,
-    label: typeof item.label === 'string' ? item.label : tm(item.label),
-  })
+  const label = (item: DeviceOption) =>
+    typeof item.label === 'string' ? item.label : tm(item.label)
 
-  fillSelect('select-camera', [auto, ...devices.cameras.map(option)], settings.cameraId ?? '')
-  fillSelect(
-    'select-microphone',
-    [auto, ...devices.microphones.map(option)],
-    settings.microphoneId ?? '',
+  const build = (
+    containerId: string,
+    list: DeviceOption[],
+    current: string | null,
+    key: 'cameraId' | 'microphoneId',
+  ) => {
+    const pick = (value: string | null) => {
+      settings = { ...settings, [key]: value }
+      saveSettings(localStorage, settings)
+      void fillDevices()
+      void restartCapture()
+    }
+    el(containerId).replaceChildren(
+      optionRow(auto, current === null, () => pick(null)),
+      ...list.map((item) => optionRow(label(item), current === item.deviceId, () => pick(item.deviceId))),
+    )
+  }
+
+  build('devices-cameras', devices.cameras, settings.cameraId, 'cameraId')
+  build('devices-mics', devices.microphones, settings.microphoneId, 'microphoneId')
+  renderIcons()
+}
+
+function renderQualityPanel(): void {
+  setText('quality-label', t(`quality.${settings.quality}`))
+
+  el('quality-options').replaceChildren(
+    ...QUALITY_PRESETS.map((preset) =>
+      optionRow(t(`quality.${preset}`), preset === settings.quality, () => {
+        settings = { ...settings, quality: preset }
+        saveSettings(localStorage, settings)
+        renderQualityPanel()
+        void session?.setQuality(preset, settings.frameRate)
+      }),
+    ),
+  )
+
+  el('framerate-options').replaceChildren(
+    ...FRAME_RATES.map((rate) =>
+      optionRow(t('quality.fps', { value: rate }), rate === settings.frameRate, () => {
+        settings = { ...settings, frameRate: rate }
+        saveSettings(localStorage, settings)
+        renderQualityPanel()
+        void session?.setQuality(settings.quality, rate)
+      }),
+    ),
+  )
+  renderIcons()
+}
+
+/** Заново берёт устройства после смены камеры или микрофона в звонке. */
+async function restartCapture(): Promise<void> {
+  const stream = session?.media.local
+  if (stream === null || stream === undefined) return
+
+  for (const track of stream.getTracks()) {
+    track.stop()
+    stream.removeTrack(track)
+  }
+  for (const kind of ['audio', 'video'] as const) await acquireTrack(kind, stream)
+}
+
+function togglePanel(which: 'devices' | 'quality'): void {
+  const target = `${which}-panel`
+  const open = el(target).hidden
+  closePanels()
+  show(target, open)
+  el(which === 'devices' ? 'action-devices' : 'action-quality').setAttribute(
+    'aria-expanded',
+    String(open),
+  )
+  renderIcons()
+}
+
+function closePanels(): void {
+  for (const [panel, button] of [
+    ['devices-panel', 'action-devices'],
+    ['quality-panel', 'action-quality'],
+  ] as const) {
+    show(panel, false)
+    el(button).setAttribute('aria-expanded', 'false')
+  }
+}
+
+/** Вставляет код из буфера: набирать тысячу символов руками никто не станет. */
+async function pasteCode(): Promise<void> {
+  try {
+    const text = await navigator.clipboard.readText()
+    if (text.trim().length === 0) return toast(t('toast.clipboardEmpty'))
+    el<HTMLTextAreaElement>('incoming-code').value = text.trim()
+    renderIncoming()
+  } catch {
+    toast(t('toast.clipboardDenied'))
+  }
+}
+
+// --------------------------------------------------------- обмен кодами
+
+/**
+ * Показывает состояние поля с чужим кодом.
+ *
+ * Длину показываем рядом: код переносят копированием, а мессенджеры иногда
+ * режут его молча — совпадение чисел на двух устройствах ловит это сразу.
+ */
+function renderIncoming(): void {
+  const value = el<HTMLTextAreaElement>('incoming-code').value.trim()
+  const ready = value.length > 0
+
+  setDisabled('action-accept', !ready, '')
+  setText(
+    'incoming-hint',
+    ready ? t('exchange.codeAccepted', { count: value.length }) : t('exchange.noTyping'),
   )
 }
 
-async function restartPreview(): Promise<void> {
-  stopStream(previewStream)
-  previewStream = null
-  await startPreview()
+/**
+ * Мастер обмена кодами: один шаг на экран.
+ *
+ * Порядок шагов зависит от роли. Создающий сначала отдаёт свой код, потом
+ * принимает ответный. Вставляющий чужой код — наоборот, и отсчёт у него
+ * запускается сразу, поэтому предупреждение об этом стоит до, а не после.
+ */
+function renderExchange(view: SessionView): void {
+  const responder = view.role === 'responder'
+  const hasOutgoing = view.outgoingCode !== null
+  const holding = session?.isHoldingCandidates ?? false
+
+  // Шаг определяется тем, что уже сделано, а не отдельным счётчиком: так
+  // возврат назад и обновление кода не сбивают нумерацию.
+  const step = responder ? (hasOutgoing ? 2 : 1) : hasOutgoing && lastCopied ? 2 : 1
+
+  setText('exchange-step-label', t('exchange.step', { current: step, total: 2 }))
+  el('progress-2').classList.toggle('is-done', step === 2)
+
+  show('outgoing-block', hasOutgoing && (responder ? step === 2 : step === 1))
+  show('incoming-block', responder ? step === 1 : step === 2)
+  show('exchange-next', step === 1)
+  show('exchange-done', step === 2)
+
+  setText('exchange-done-text', t(responder ? 'exchange.doneIncoming' : 'exchange.doneOutgoing'))
+  show('action-show-outgoing', !responder)
+  setText(
+    'exchange-next-text',
+    t(responder ? 'exchange.nextOutgoing' : 'exchange.nextIncoming'),
+  )
+  setText('outgoing-label', t(responder ? 'exchange.answerTitle' : 'exchange.yourCode'))
+
+  if (view.outgoingCode !== null) {
+    setText('outgoing-preview', envelope(view.outgoingCode))
+    setText('outgoing-size', t('exchange.size', { count: view.outgoingCode.length }))
+  }
+
+  const foot = holding
+    ? 'exchange.footRunning'
+    : responder
+      ? 'exchange.footClock'
+      : step === 1
+        ? 'exchange.footNoRush'
+        : 'exchange.footSettings'
+  setText('exchange-foot-text', t(foot))
+}
+
+/** Начало и конец кода: середину читать всё равно некому. */
+function envelope(code: string): string {
+  return code.length <= 32 ? code : `${code.slice(0, 12)} … ${code.slice(-12)}`
 }
 
 // ------------------------------------------------------- вкладка «Напрямую»
@@ -369,9 +465,10 @@ const CHECK_ICON: Record<NetworkCheck['state'], string> = {
 function renderChecks(): void {
   const view = buildChecks(network)
 
-  el('verdict').dataset['state'] = view.verdict.state
+  el('action-status-toggle').dataset['state'] = view.verdict.state
   setText('verdict-title', t(view.verdict.titleKey))
   setText('verdict-note', t(view.verdict.noteKey))
+  el<HTMLElement>('verdict-icon').setAttribute('data-lucide', CHECK_ICON[view.verdict.state])
 
   el('checks').replaceChildren(...view.checks.map(checkRow))
 
@@ -380,6 +477,27 @@ function renderChecks(): void {
   // запрещать попытку — это обещать больше измеренного, только наоборот.
   show('action-goto-server', view.suggestServer)
 
+  // Шаги зависят от вывода: когда прямое соединение не поднимется, человеку
+  // нужен другой список действий, а не тот же самый в неисполнимом виде.
+  renderSteps(view.suggestServer ? 'server' : 'direct')
+
+  renderIcons()
+}
+
+/** Пошаговая подсказка под статусом: что человеку сделать дальше. */
+function renderSteps(kind: 'direct' | 'server'): void {
+  stepsKind = kind
+  for (const index of [1, 2, 3] as const) {
+    setText(`step-${index}`, t(`steps.${kind}.${index}`))
+  }
+}
+
+/** Раскрывашка: список проверок и сравнение режимов прячутся до нажатия. */
+function toggleExpander(buttonId: string, panelId: string): void {
+  const button = el(buttonId)
+  const open = button.getAttribute('aria-expanded') !== 'true'
+  button.setAttribute('aria-expanded', String(open))
+  show(panelId, open)
   renderIcons()
 }
 
@@ -404,10 +522,6 @@ function checkRow(check: NetworkCheck): HTMLLIElement {
 async function runDiagnostics(): Promise<void> {
   network = await probeNetwork(buildIceServers().map((server) => String(server.urls)))
   renderChecks()
-}
-
-function renderPassphrase(): void {
-  setText('passphrase-value', t(passphrase === null ? 'passphrase.unset' : 'passphrase.set'))
 }
 
 // --------------------------------------------------------------------- табы
@@ -465,16 +579,17 @@ function newSession(): CallSession {
 
   const created = new CallSession({
     quality: settings.quality,
-    passphrase,
+    frameRate: settings.frameRate,
+    passphrase: null,
     cameraId: settings.cameraId,
     microphoneId: settings.microphoneId,
     signalingServer: settings.signalingServer,
     pageUrl: `${location.origin}${location.pathname}`,
     connectDelay: settings.connectDelay,
     network,
-    // Камера уже захвачена на главном экране вместе с состоянием тумблеров —
-    // просить её второй раз значит заставить человека ждать на ровном месте.
-    stream: previewStream,
+    // Захват теперь начинается вместе со звонком: предпросмотра на главном
+    // экране больше нет, и держать камеру включённой до разговора незачем.
+    stream: null,
   })
 
   // Прошлая сессия обязана замолчать: иначе её умирающее соединение
@@ -510,19 +625,12 @@ function render(view: SessionView): void {
   // Пока новый код не готов, поле обязано быть пустым: иначе пользователь
   // копирует код уже уничтоженной сессии и удивляется, почему не соединяется.
   el<HTMLTextAreaElement>('outgoing-code').value = view.outgoingCode ?? ''
-  show('outgoing-block', view.outgoingCode !== null)
   // Отсчёт нужен обеим сторонам: момент общий, и видеть его должны оба.
   const holding = session?.isHoldingCandidates ?? false
   show('answer-sent', holding)
   show('answer-refresh', !holding && view.role === 'responder' && view.outgoingCode !== null)
   renderCountdown(view.startAt)
-
-  if (view.outgoingCode !== null) {
-    // Длина рядом с кодом — чтобы обе стороны могли сверить её глазами:
-    // выделение мышью в прокрученном поле теряет хвост незаметно.
-    const label = t(view.role === 'responder' ? 'exchange.answerCode' : 'exchange.yourCode')
-    setText('outgoing-label', `${label} · ${t('exchange.chars', { count: view.outgoingCode.length })}`)
-  }
+  renderExchange(view)
   if (view.inviteLink !== null && view.inviteLink !== inviteLink) {
     inviteLink = view.inviteLink
     el<HTMLInputElement>('invite-link').value = inviteLink
@@ -587,8 +695,16 @@ function onPhase(view: SessionView): void {
 
   switch (view.phase) {
     case 'awaiting-exchange':
+      // Со своим сервером обмена кодами нет вовсе: ссылка уже создана, и ждать
+      // собеседника человек должен в звонке, где может проверить себя.
+      if (view.inviteLink !== null) {
+        attachStream('waiting-video', session?.media.local ?? null)
+        void fillDevices()
+        renderQualityPanel()
+        screen('screen-call')
+        break
+      }
       setText('exchange-title', t('exchange.title'))
-      setText('exchange-hint', t('exchange.hint'))
       screen('screen-exchange')
       break
 
@@ -602,8 +718,14 @@ function onPhase(view: SessionView): void {
 
       attachStream('remote-video', remote)
       attachStream('local-video', session?.media.local ?? null)
+      void fillDevices()
+      renderQualityPanel()
       startTimer()
       screen('screen-call')
+
+      // Подключение собеседника — событие, которое легко пропустить: человек
+      // мог отойти. Показываем его отдельно, а не только сменой картинки.
+      if (view.inviteLink !== null) flashPeerJoined()
       break
     }
 
@@ -621,8 +743,24 @@ function onPhase(view: SessionView): void {
   }
 }
 
+/** Короткое уведомление о том, что собеседник вошёл в комнату. */
+function flashPeerJoined(): void {
+  show('peer-joined', true)
+  renderIcons()
+  setTimeout(() => show('peer-joined', false), PEER_JOINED_MS)
+}
+
 function renderCall(view: SessionView): void {
-  setBadge('badge-connection', tm(describeConnection(view.stats?.kind ?? null)))
+  // Со своим сервером человек попадает в звонок сразу после создания ссылки и
+  // ждёт там: так он успевает проверить себя, пока второй идёт по ссылке.
+  const waiting = view.inviteLink !== null && !view.peerPresent && view.phase !== 'ended'
+  setBadge(
+    'badge-route',
+    waiting ? t('call.waitingBadge') : tm(describeConnection(view.stats?.route ?? null)),
+  )
+  el('badge-route').classList.toggle('badge--warn', waiting)
+  show('call-waiting', waiting)
+  show('badge-timer', !waiting)
 
   // Смена слоя шифрования — момент, когда декодер получает кадры по старым
   // правилам и выдаёт их резким щелчком прямо в наушники.
@@ -635,8 +773,7 @@ function renderCall(view: SessionView): void {
   encryption.classList.toggle('badge--ok', view.frameEncryption)
   encryption.classList.toggle('badge--warn', !view.frameEncryption)
   setBadge('badge-encryption', t(view.frameEncryption ? 'encryption.e2ee' : 'encryption.transportOnly'))
-  el('encryption-tip').textContent =
-    `${t('encryption.kinds')} ${t('encryption.now')} ${t(`encryption.reason.${view.encryptionReason}`)}`
+  renderEncryptionTip(view.frameEncryption)
 
   // Раньше блок возвращался при каждой перерисовке статистики: показ был
   // привязан только к наличию фразы и не помнил, что её уже сверили.
@@ -645,11 +782,11 @@ function renderCall(view: SessionView): void {
     show('sas-block', true)
   }
 
-  show('call-off', view.peerMuted.video)
-  show('badge-peer-mic', view.peerMuted.audio)
-  show('badge-self-mic', view.muted.audio && view.canSend.audio)
-  show('badge-self-cam', view.muted.video && view.canSend.video)
+  show('call-off', view.peerMuted.video && !waiting)
+  show('peer-mic-off', view.peerMuted.audio && !waiting)
+  show('self-mic-off', view.muted.audio && view.canSend.audio)
   show('pip-off', view.muted.video)
+  show('waiting-off', view.muted.video)
   setPressed('call-mic', !view.muted.audio)
   setPressed('call-cam', !view.muted.video)
   el('call-mic').title = view.canSend.audio ? '' : t('controls.micUnavailable')
@@ -668,9 +805,7 @@ function renderToggleIcons(audioOn: boolean, videoOn: boolean): void {
   toggleIcons = { audio: audioOn, video: videoOn }
 
   const wanted: [string, string][] = [
-    ['toggle-mic', audioOn ? 'mic' : 'mic-off'],
     ['call-mic', audioOn ? 'mic' : 'mic-off'],
-    ['toggle-cam', videoOn ? 'video' : 'video-off'],
     ['call-cam', videoOn ? 'video' : 'video-off'],
   ]
 
@@ -682,6 +817,27 @@ function renderToggleIcons(audioOn: boolean, videoOn: boolean): void {
     replacement.setAttribute('data-lucide', name)
     current.replaceWith(replacement)
   }
+  renderIcons()
+}
+
+/**
+ * Подсказка у бейджа шифрования: два слоя, у каждого отметка и строка о том,
+ * кто именно не услышит. Названия слоёв человеку ничего не говорят, поэтому
+ * пункты названы по тому, от кого они защищают.
+ */
+function renderEncryptionTip(frameEncryption: boolean): void {
+  const item = el('tip-e2ee')
+  const icon = item.querySelector('i')
+  if (icon !== null) {
+    const replacement = document.createElement('i')
+    replacement.setAttribute('data-lucide', frameEncryption ? 'circle-check' : 'circle-x')
+    icon.replaceWith(replacement)
+  }
+  item.classList.toggle('is-off', !frameEncryption)
+
+  const title = item.querySelector('strong')
+  if (title !== null) title.textContent = t(frameEncryption ? 'encryption.server' : 'encryption.serverOff')
+  setText('tip-e2ee-note', t(frameEncryption ? 'encryption.serverNote' : 'encryption.serverOffNote'))
   renderIcons()
 }
 
@@ -802,14 +958,6 @@ function fillDelay(): void {
   )
 }
 
-function fillQuality(): void {
-  fillSelect(
-    'quality-select',
-    qualityOptions().map((option) => ({ value: option.value, label: t(option.labelKey) })),
-    settings.quality,
-  )
-}
-
 function openSettings(): void {
   el<HTMLInputElement>('setting-server').value = settings.signalingServer ?? ''
   show('server-error', false)
@@ -876,22 +1024,17 @@ function wire(): void {
     renderServerPanel()
   })
 
-  on('toggle-mic', 'click', () => void toggleTrack('audio'))
-  on('toggle-cam', 'click', () => void toggleTrack('video'))
   on('call-mic', 'click', () => void toggleTrack('audio'))
   on('call-cam', 'click', () => void toggleTrack('video'))
 
-  for (const [id, key] of [
-    ['select-camera', 'cameraId'],
-    ['select-microphone', 'microphoneId'],
-  ] as const) {
-    on(id, 'change', (event) => {
-      const value = (event.currentTarget as HTMLSelectElement).value
-      settings = { ...settings, [key]: value.length > 0 ? value : null }
-      saveSettings(localStorage, settings)
-      void restartPreview()
-    })
-  }
+  on('action-mode-help', 'click', () => toggleExpander('action-mode-help', 'mode-help'))
+  on('action-status-toggle', 'click', () => toggleExpander('action-status-toggle', 'checks'))
+  on('action-stats-toggle', 'click', () => toggleExpander('action-stats-toggle', 'stats'))
+
+  // Панели устройств и качества взаимно исключают друг друга: две всплывашки
+  // над кнопками перекрыли бы и звонок, и друг друга.
+  on('action-devices', 'click', () => togglePanel('devices'))
+  on('action-quality', 'click', () => togglePanel('quality'))
 
   for (const prefix of ['home-error', 'exchange-error']) {
     on(`${prefix}-close`, 'click', () => show(prefix, false))
@@ -906,13 +1049,6 @@ function wire(): void {
   on('tab-server', 'click', () => setTab('server'))
   on('action-goto-server', 'click', () => setTab('server'))
 
-  on('action-passphrase', 'click', () => {
-    const typed = prompt(t('passphrase.prompt'), passphrase ?? '')
-    if (typed === null) return
-
-    passphrase = typed.trim().length > 0 ? typed.trim() : null
-    renderPassphrase()
-  })
 
   on('action-create-code', 'click', () => {
     void withBusy('action-create-code', 'direct.creating', async () => {
@@ -940,6 +1076,14 @@ function wire(): void {
     setText('exchange-hint', t('exchange.joinHint'))
     screen('screen-exchange')
   })
+
+  on('action-paste-code', 'click', () => void pasteCode())
+  on('action-show-outgoing', 'click', () => {
+    const box = el<HTMLTextAreaElement>('outgoing-code')
+    box.hidden = !box.hidden
+    if (!box.hidden) box.select()
+  })
+  on('action-copy-link-3', 'click', () => void copy(inviteLink, 'toast.linkCopied'))
 
   on('action-exchange-back', 'click', () => {
     session?.hangUp()
@@ -999,7 +1143,10 @@ function wire(): void {
     })
   })
 
+  on('incoming-code', 'input', renderIncoming)
+
   on('action-copy-code', 'click', () => {
+    lastCopied = true
     void copy(el<HTMLTextAreaElement>('outgoing-code').value, 'toast.codeCopied')
   })
 
@@ -1040,15 +1187,6 @@ function wire(): void {
     session = null
   })
 
-  on('quality-select', 'change', (event) => {
-    const value = (event.currentTarget as HTMLSelectElement).value
-    if (!isQualityPreset(value)) return
-
-    settings = { ...settings, quality: value }
-    saveSettings(localStorage, settings)
-    void session?.setQuality(value)
-  })
-
   window.addEventListener('beforeunload', () => session?.hangUp())
 }
 
@@ -1068,9 +1206,8 @@ function exposeDiagnostics(): void {
 function start(): void {
   exposeDiagnostics()
   applyTranslations()
-  fillQuality()
+  renderQualityPanel()
   renderLangs()
-  renderPassphrase()
   setTab('direct')
   renderChecks()
   renderServerPanel()
@@ -1080,13 +1217,11 @@ function start(): void {
 
   if (detectTransformSupport() === 'none') toast(t('notice.noFrameEncryption'))
 
-  void startPreview()
   void runDiagnostics()
 
   // Страница открыта по ссылке-приглашению — подключаемся, ничего не спрашивая.
   if (parseInviteLink(location.href) !== null) {
     void (async () => {
-      await startPreview()
       const created = newSession()
       await created.prepare()
       await created.joinLink(location.href)

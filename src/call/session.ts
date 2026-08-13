@@ -38,7 +38,8 @@ import {
   stripCandidates,
 } from '../signaling/sdp.js'
 import type { Role } from '../signaling/types.js'
-import type { QualityPreset } from '../media/quality.js'
+import { BASE_FRAME_RATE } from '../media/quality.js'
+import type { FrameRate, QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
 import { StatsCollector, createConnection, preferFrameSafeVideo, waitForGathering } from './peer.js'
 import type { CallStats } from './peer.js'
@@ -131,6 +132,14 @@ export interface SessionView {
   iceState: RTCIceConnectionState | null
   stats: CallStats | null
   peerMuted: { audio: boolean; video: boolean }
+  /**
+   * Есть ли собеседник в комнате.
+   *
+   * В режиме со своим сервером человек попадает в звонок сразу после создания
+   * ссылки и ждёт там: интерфейсу нужно отличать «ещё никого нет» от «камера
+   * выключена», иначе пустой экран выглядит одинаково в обоих случаях.
+   */
+  peerPresent: boolean
   /** Наше состояние: по умолчанию входим в звонок молча и без картинки. */
   muted: { audio: boolean; video: boolean }
   /** Есть ли что передавать: без камеры или микрофона кнопки бессмысленны. */
@@ -147,6 +156,8 @@ export interface SessionView {
 
 export interface SessionOptions {
   quality: QualityPreset
+  /** Частота кадров. Не указана — базовая. */
+  frameRate?: FrameRate
   passphrase: string | null
   cameraId?: string | null
   microphoneId?: string | null
@@ -201,6 +212,7 @@ export class CallSession {
     iceState: null,
     stats: null,
     peerMuted: { audio: false, video: false },
+    peerPresent: false,
     muted: { audio: true, video: true },
     canSend: { audio: false, video: false },
     notice: null,
@@ -316,6 +328,7 @@ export class CallSession {
       } else {
         const media = await requestMedia({
           preset: this.options.quality,
+          frameRate: this.frameRate,
           cameraId: this.options.cameraId ?? null,
           microphoneId: this.options.microphoneId ?? null,
         })
@@ -487,9 +500,11 @@ export class CallSession {
         void this.onJoined(role, iceServers)
       },
       onPeerJoined: () => {
+        this.patch({ peerPresent: true })
         void this.onPeerJoined()
       },
       onPeerLeft: () => {
+        this.patch({ peerPresent: false })
         if (this.wasConnected) this.endCall('peer')
         else this.patch({ error: message('session.peerLeft') })
       },
@@ -659,7 +674,9 @@ export class CallSession {
     if (state === 'connected') {
       this.stopWatchdog()
       this.wasConnected = true
-      this.patch({ phase: 'connected', error: null, endReason: null })
+      // Соединение поднялось — значит собеседник на месте. В ручном режиме
+      // сигналинга нет, и узнать об этом больше неоткуда.
+      this.patch({ phase: 'connected', peerPresent: true, error: null, endReason: null })
       this.startTimers()
       return
     }
@@ -1203,8 +1220,10 @@ export class CallSession {
       if (control.t === 'quality') {
         // Просьбу собеседника выполняем: камера у нас, а смотрит он. Иначе
         // селектор качества управлял бы тем, чего человек не видит.
-        console.debug(`[p2p] собеседник просит качество ${control.preset}`)
-        void this.applyPeerQuality(control.preset)
+        console.debug(
+          `[p2p] собеседник просит качество ${control.preset}@${control.frameRate}`,
+        )
+        void this.applyPeerQuality(control.preset, control.frameRate)
       }
       if (control.t === 'encryption') {
         // Свой слой шифрования видно по журналу, а чужой — только с его слов.
@@ -1415,18 +1434,24 @@ export class CallSession {
     return this.view.muted[kind]
   }
 
-  /** Меняет исходящее качество по просьбе собеседника, не трогая свой выбор. */
-  private async applyPeerQuality(quality: QualityPreset): Promise<void> {
-    if (this.connection === null || this.localStream === null) return
-    await applyQuality(this.connection, this.localStream, quality)
+  /** Текущая частота кадров: в настройках она может быть не задана. */
+  private get frameRate(): FrameRate {
+    return this.options.frameRate ?? BASE_FRAME_RATE
   }
 
-  async setQuality(quality: QualityPreset): Promise<void> {
-    this.options = { ...this.options, quality }
+  /** Меняет исходящее качество по просьбе собеседника, не трогая свой выбор. */
+  private async applyPeerQuality(quality: QualityPreset, frameRate: FrameRate): Promise<void> {
+    if (this.connection === null || this.localStream === null) return
+    await applyQuality(this.connection, this.localStream, quality, frameRate)
+  }
+
+  /** Частота не передана — остаётся прежней: меняем только то, что попросили. */
+  async setQuality(quality: QualityPreset, frameRate: FrameRate = this.frameRate): Promise<void> {
+    this.options = { ...this.options, quality, frameRate }
     if (this.connection !== null && this.localStream !== null) {
-      await applyQuality(this.connection, this.localStream, quality)
+      await applyQuality(this.connection, this.localStream, quality, frameRate)
     }
-    this.sendControl({ t: 'quality', preset: quality })
+    this.sendControl({ t: 'quality', preset: quality, frameRate })
   }
 
   hangUp(): void {

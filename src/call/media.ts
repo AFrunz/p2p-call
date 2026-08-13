@@ -1,7 +1,7 @@
 import { message } from '../i18n/message.js'
 import type { Message } from '../i18n/message.js'
-import { presetToConstraints, presetToEncodings } from '../media/quality.js'
-import type { QualityPreset } from '../media/quality.js'
+import { BASE_FRAME_RATE, presetToConstraints, presetToEncodings } from '../media/quality.js'
+import type { FrameRate, QualityPreset } from '../media/quality.js'
 
 export interface DeviceOption {
   deviceId: string
@@ -60,6 +60,8 @@ export class MediaError extends Error {
 
 export interface MediaRequest {
   preset: QualityPreset
+  /** Частота кадров. Не указана — базовая: её тянет любая камера. */
+  frameRate?: FrameRate
   cameraId?: string | null
   microphoneId?: string | null
   /**
@@ -131,7 +133,7 @@ export async function requestMedia(
   // Сохранённое устройство могли отключить: его id указан как exact, и это
   // единственная причина, по которой запрос падает на исправной машине.
   if (hasSavedDevice) {
-    const plain = { preset: request.preset }
+    const plain = { preset: request.preset, frameRate: request.frameRate ?? BASE_FRAME_RATE }
     try {
       return result(
         await provider.getUserMedia({
@@ -149,7 +151,9 @@ export async function requestMedia(
   }
 
   // Пробуем по отдельности: возможно, доступен только один вид устройств.
-  const relaxed = hasSavedDevice ? { preset: request.preset } : request
+  const relaxed = hasSavedDevice
+    ? { preset: request.preset, frameRate: request.frameRate ?? BASE_FRAME_RATE }
+    : request
   // Строго по очереди. Два одновременных getUserMedia — это два одновременных
   // запроса разрешения: браузер показывает их по одному, и второй вызов может
   // не завершиться никогда. Заметно это только на свежем профиле, когда
@@ -216,7 +220,9 @@ async function attempt(
 function videoConstraints(request: MediaRequest): MediaTrackConstraints | false {
   if (request.kinds !== undefined && !request.kinds.includes('video')) return false
 
-  const constraints: MediaTrackConstraints = { ...presetToConstraints(request.preset) }
+  const constraints: MediaTrackConstraints = {
+    ...presetToConstraints(request.preset, request.frameRate ?? BASE_FRAME_RATE),
+  }
   if (request.cameraId != null) constraints.deviceId = { exact: request.cameraId }
   return constraints
 }
@@ -328,11 +334,12 @@ export async function applyQuality(
   connection: RTCPeerConnection,
   stream: MediaStream,
   preset: QualityPreset,
+  frameRate: FrameRate,
 ): Promise<void> {
   const [track] = stream.getVideoTracks()
   if (track !== undefined) {
     try {
-      await track.applyConstraints(presetToConstraints(preset))
+      await track.applyConstraints(presetToConstraints(preset, frameRate))
     } catch (error) {
       // Камера может не уметь запрошенный режим — звонок из-за этого рвать
       // незачем, но молчать нельзя: именно здесь теряется разрешение.
@@ -342,7 +349,7 @@ export async function applyQuality(
     const settings = track.getSettings()
     console.debug(
       `[p2p] камера отдаёт ${settings.width}x${settings.height}@${settings.frameRate}` +
-        ` (просили ${preset})`,
+        ` (просили ${preset}@${frameRate})`,
     )
   }
 
@@ -350,7 +357,7 @@ export async function applyQuality(
   if (sender === undefined) return
 
   const parameters = sender.getParameters()
-  const [wanted] = presetToEncodings(preset)
+  const [wanted] = presetToEncodings(preset, frameRate)
 
   parameters.encodings = (parameters.encodings ?? [{}]).map((encoding) => ({
     ...encoding,

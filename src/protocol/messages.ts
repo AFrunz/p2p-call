@@ -1,5 +1,5 @@
-import { isQualityPreset } from '../media/quality.js'
-import type { QualityPreset } from '../media/quality.js'
+import { isFrameRate, isQualityPreset } from '../media/quality.js'
+import type { FrameRate, QualityPreset } from '../media/quality.js'
 
 /** Как собеседник шифрует кадры — знать это можно только с его слов. */
 export type TransformSupportName = 'script-transform' | 'encoded-streams' | 'none'
@@ -12,7 +12,9 @@ const SUPPORT_NAMES: readonly string[] = ['script-transform', 'encoded-streams',
  */
 export type ControlMessage =
   | { t: 'mute'; kind: 'audio' | 'video'; muted: boolean }
-  | { t: 'quality'; preset: QualityPreset }
+  // Разрешение и частота едут вместе: собеседник просит картинку целиком, а не
+  // по половинке, и применять их надо одним движением.
+  | { t: 'quality'; preset: QualityPreset; frameRate: FrameRate }
   | { t: 'keyRotate'; keyId: number }
   | { t: 'ping'; ts: number }
   | { t: 'pong'; ts: number }
@@ -50,7 +52,9 @@ export function decodeMessage(raw: string): ControlMessage | null {
     }
     case 'quality': {
       const preset = source['preset']
-      return isQualityPreset(preset) ? { t: 'quality', preset } : null
+      const frameRate = source['frameRate']
+      if (!isQualityPreset(preset) || !isFrameRate(frameRate)) return null
+      return { t: 'quality', preset, frameRate }
     }
     case 'keyRotate': {
       const keyId = source['keyId']

@@ -16,7 +16,7 @@
     <main class="app" id="screen-home">
       <header class="head">
         <div class="head__titles">
-          <h1 data-i18n="home.title">Зашифрованный звонок</h1>
+          <h1 data-i18n="home.title">P2P Call</h1>
           <p class="muted" data-i18n="home.subtitle">
             Разговор идёт напрямую между двумя браузерами. Ключи не покидают ваши устройства.
           </p>
@@ -27,37 +27,6 @@
         </button>
       </header>
 
-      <div class="stage-column">
-        <section class="preview" id="preview">
-          <video id="preview-video" autoplay playsinline muted></video>
-          <div class="preview__off" id="preview-off">
-            <i data-lucide="video-off"></i>
-            <p id="preview-hint" data-i18n="preview.requesting">Запрашиваем доступ к камере и микрофону…</p>
-          </div>
-          <div class="preview__toggles">
-            <button class="toggle" id="toggle-mic" aria-pressed="false">
-              <i data-lucide="mic-off"></i>
-            </button>
-            <button class="toggle" id="toggle-cam" aria-pressed="false">
-              <i data-lucide="video-off"></i>
-            </button>
-          </div>
-        </section>
-
-        <div class="devices">
-          <label class="device">
-            <i data-lucide="video"></i>
-            <select id="select-camera" data-i18n-aria="devices.camera"></select>
-            <i data-lucide="chevron-down" class="device__chevron"></i>
-          </label>
-          <label class="device">
-            <i data-lucide="mic"></i>
-            <select id="select-microphone" data-i18n-aria="devices.microphone"></select>
-            <i data-lucide="chevron-down" class="device__chevron"></i>
-          </label>
-        </div>
-      </div>
-
       <div class="side-column">
         <div class="notice notice--error" id="home-error" hidden>
           <i data-lucide="circle-x"></i>
@@ -65,14 +34,54 @@
             <strong data-i18n="error.title">Не удалось подключиться</strong>
             <p id="home-error-note"></p>
             <p class="hint" id="home-error-hint" hidden data-i18n="error.needServer">
-            Без сервера-ретранслятора это соединение не установится.
+              Без сервера-ретранслятора это соединение не установится.
             </p>
             <div class="actions">
               <button class="button button--primary" id="home-error-server" hidden data-i18n="direct.goServer">
-              Настроить свой сервер
+                Настроить свой сервер
               </button>
               <button class="button button--ghost" id="home-error-close" data-i18n="error.dismiss">Понятно</button>
             </div>
+          </div>
+        </div>
+
+        <!-- ---------- Какой режим выбрать ---------- -->
+        <button class="row row--expand" id="action-mode-help" aria-expanded="false">
+          <i data-lucide="circle-help"></i>
+          <span data-i18n="modes.help">Какой режим выбрать</span>
+          <i data-lucide="chevron-down" class="row__chevron"></i>
+        </button>
+
+        <div class="compare" id="mode-help" hidden>
+          <div class="compare__col">
+            <strong data-i18n="tabs.direct">Напрямую</strong>
+            <p class="compare__item compare__item--pro">
+              <i data-lucide="plus"></i><span data-i18n="modes.direct.pro1">ничего не поднимать</span>
+            </p>
+            <p class="compare__item compare__item--pro">
+              <i data-lucide="plus"></i><span data-i18n="modes.direct.pro2">никто не видит даже факт звонка</span>
+            </p>
+            <p class="compare__item compare__item--con">
+              <i data-lucide="minus"></i><span data-i18n="modes.direct.con1">нужен обмен кодами</span>
+            </p>
+            <p class="compare__item compare__item--con">
+              <i data-lucide="minus"></i><span data-i18n="modes.direct.con2">строгий NAT не пробить</span>
+            </p>
+          </div>
+          <div class="compare__col">
+            <strong data-i18n="tabs.server">Через сервер</strong>
+            <p class="compare__item compare__item--pro">
+              <i data-lucide="plus"></i><span data-i18n="modes.server.pro1">вход по ссылке, без кодов</span>
+            </p>
+            <p class="compare__item compare__item--pro">
+              <i data-lucide="plus"></i><span data-i18n="modes.server.pro2">работает в любой сети</span>
+            </p>
+            <p class="compare__item compare__item--con">
+              <i data-lucide="minus"></i><span data-i18n="modes.server.con1">нужен свой сервер</span>
+            </p>
+            <p class="compare__item compare__item--con">
+              <i data-lucide="minus"></i><span data-i18n="modes.server.con2">сервер видит факт звонка</span>
+            </p>
           </div>
         </div>
 
@@ -87,31 +96,32 @@
 
         <!-- ---------- Вкладка «Напрямую» ---------- -->
         <section class="panel" id="panel-direct" role="tabpanel">
-          <div class="verdict" id="verdict" data-state="pending">
+          <button class="verdict" id="action-status-toggle" data-state="pending" aria-expanded="false">
             <i data-lucide="loader-circle" id="verdict-icon"></i>
-            <div>
+            <div class="verdict__body">
               <strong id="verdict-title" data-i18n="verdict.pending.title">Проверяем сеть</strong>
               <p id="verdict-note" data-i18n="verdict.pending.note">
                 Опрашиваем два STUN-сервера, это занимает пару секунд.
               </p>
             </div>
+            <i data-lucide="chevron-down" class="verdict__chevron"></i>
+          </button>
+
+          <ul class="checks" id="checks" hidden></ul>
+
+          <div class="steps" id="direct-steps">
+            <span class="section" data-i18n="steps.title">ЧТО ДЕЛАТЬ</span>
+            <p class="step"><span class="step__num">1</span><span id="step-1"></span></p>
+            <p class="step"><span class="step__num">2</span><span id="step-2"></span></p>
+            <p class="step"><span class="step__num">3</span><span id="step-3"></span></p>
           </div>
 
-          <ul class="checks" id="checks"></ul>
-
           <div class="grow"></div>
-
-          <button class="row" id="action-passphrase">
-            <i data-lucide="key-round"></i>
-            <span data-i18n="passphrase.label">Общая фраза</span>
-            <span class="row__value" id="passphrase-value" data-i18n="passphrase.unset">не задана</span>
-            <i data-lucide="chevron-right"></i>
-          </button>
 
           <button class="button button--primary" id="action-create-code" data-i18n="direct.create">
             Создать звонок
           </button>
-          <button class="button button--primary" id="action-goto-server" hidden data-i18n="direct.goServer">
+          <button class="button button--outline" id="action-goto-server" hidden data-i18n="direct.goServer">
             Настроить свой сервер
           </button>
           <button class="button button--ghost" id="action-open-join" data-i18n="direct.join">
@@ -126,24 +136,33 @@
 
         <!-- ---------- Вкладка «Через сервер» ---------- -->
         <section class="panel" id="panel-server" role="tabpanel" hidden>
-          <!-- состояние: сервер не добавлен -->
           <div class="card" id="server-empty">
-            <div class="card__head">
-              <i data-lucide="server"></i>
-              <strong data-i18n="server.empty.title">Свой сервер не подключён</strong>
-            </div>
-            <p class="muted" data-i18n="server.empty.note">
-              Нужен, когда прямое соединение не проходит. Разворачивается одной командой и остаётся
-              под вашим контролем.
+            <span class="section" data-i18n="server.needs.title">ЧТО ДЛЯ ЭТОГО НУЖНО</span>
+            <p class="need">
+              <i data-lucide="timer"></i>
+              <span><strong data-i18n="server.needs.time">Около 15 минут</strong>
+              <em data-i18n="server.needs.timeNote">Столько занимает развёртывание с нуля</em></span>
             </p>
-            <ul class="bullets">
-              <li><i data-lucide="check"></i><span data-i18n="server.empty.b1">Подключение по ссылке, без обмена кодами</span></li>
-              <li><i data-lucide="check"></i><span data-i18n="server.empty.b2">Работает там, где NAT не пробивается</span></li>
-              <li><i data-lucide="check"></i><span data-i18n="server.empty.b3">Сервер не видит ни SDP, ни ключей звонка</span></li>
-            </ul>
+            <p class="need">
+              <i data-lucide="server"></i>
+              <span><strong data-i18n="server.needs.host">Любой VPS с Linux</strong>
+              <em data-i18n="server.needs.hostNote">Хватит самого дешёвого тарифа</em></span>
+            </p>
+            <p class="need">
+              <i data-lucide="globe"></i>
+              <span><strong data-i18n="server.needs.domain">Домен не обязателен</strong>
+              <em data-i18n="server.needs.domainNote">Можно поднять на голом IP-адресе</em></span>
+            </p>
+            <p class="need">
+              <i data-lucide="terminal"></i>
+              <span><strong data-i18n="server.needs.command">Одна команда</strong>
+              <em data-i18n="server.needs.commandNote">docker compose up — дальше всё само</em></span>
+            </p>
+            <p class="hint hint--doc">
+              <i data-lucide="book-open"></i><span data-i18n="server.needs.doc">Пошаговая инструкция — DEPLOY.md в репозитории</span>
+            </p>
           </div>
 
-          <!-- состояние: сервер настроен -->
           <div class="card" id="server-card" hidden>
             <div class="card__head">
               <span class="dot" id="server-dot"></span>
@@ -157,7 +176,6 @@
             </p>
           </div>
 
-          <!-- состояние: ссылка получена -->
           <div class="card" id="link-card" hidden>
             <span class="label" data-i18n="link.label">Ссылка для собеседника</span>
             <div class="link-box">
@@ -195,26 +213,54 @@
 
     <!-- ================= Обмен кодами ================= -->
     <main class="app app--narrow" id="screen-exchange" hidden>
-      <header class="head">
+      <header class="head head--wizard">
         <button class="icon-button" id="action-exchange-back"><i data-lucide="arrow-left"></i></button>
         <div class="head__titles">
-          <h1 id="exchange-title" data-i18n="exchange.title">Передайте код собеседнику</h1>
-          <p class="muted" id="exchange-hint" data-i18n="exchange.hint">
-            Отправьте свой код любым способом и вставьте сюда тот, что придёт в ответ.
-          </p>
+          <h1 id="exchange-title" data-i18n="exchange.title">Обмен кодами</h1>
+          <p class="muted" id="exchange-step-label"></p>
         </div>
       </header>
 
-      <div class="card" id="outgoing-block">
-        <span class="label" id="outgoing-label" data-i18n="exchange.yourCode">Ваш код</span>
-        <textarea id="outgoing-code" class="code" readonly rows="6"></textarea>
-        <div class="actions">
-          <button class="button button--primary" id="action-copy-code">
-            <i data-lucide="copy"></i><span data-i18n="link.copy">Скопировать</span>
-          </button>
+      <div class="progress">
+        <span class="progress__bar is-done"></span>
+        <span class="progress__bar" id="progress-2"></span>
+      </div>
+
+      <!-- шаг «выполнено»: свёрнутая строка предыдущего шага -->
+      <div class="row row--done" id="exchange-done" hidden>
+        <i data-lucide="circle-check"></i>
+        <span id="exchange-done-text"></span>
+        <button class="row__action" id="action-show-outgoing" data-i18n="exchange.show">показать</button>
+      </div>
+
+      <!-- ---------- Свой код ---------- -->
+      <section class="card card--active" id="outgoing-block">
+        <div class="card__head">
+          <i data-lucide="arrow-up-right"></i>
+          <strong id="outgoing-label" data-i18n="exchange.yourCode">Ваш код готов</strong>
         </div>
 
-        <div id="answer-sent" hidden>
+        <div class="envelope">
+          <span class="envelope__code" id="outgoing-preview"></span>
+          <span class="envelope__size">
+            <i data-lucide="file-lock-2"></i><span id="outgoing-size"></span>
+          </span>
+        </div>
+
+        <p class="hint" data-i18n="exchange.sendHint">
+          Читать его не нужно — просто скопируйте и отправьте: мессенджером, почтой, как удобно.
+        </p>
+
+        <button class="button button--primary" id="action-copy-code">
+          <i data-lucide="copy"></i><span data-i18n="exchange.copy">Скопировать код</span>
+        </button>
+
+        <textarea id="outgoing-code" class="code" readonly rows="6" hidden></textarea>
+
+        <div class="countdown" id="answer-sent" hidden>
+          <div class="countdown__ring" id="countdown-ring">
+            <span id="countdown-value">—</span>
+          </div>
           <p class="hint" id="countdown-hint"></p>
         </div>
 
@@ -226,22 +272,39 @@
             Обновить код
           </button>
         </div>
+      </section>
+
+      <!-- ---------- Следующий шаг, пока неактивный ---------- -->
+      <div class="row row--next" id="exchange-next" hidden>
+        <span class="step__num">2</span>
+        <span id="exchange-next-text"></span>
       </div>
 
-      <div class="card">
-        <span class="label" id="incoming-label" data-i18n="exchange.peerCode">Код собеседника</span>
+      <!-- ---------- Код собеседника ---------- -->
+      <section class="card card--active" id="incoming-block" hidden>
+        <div class="card__head">
+          <i data-lucide="arrow-down-left" id="incoming-icon"></i>
+          <strong id="incoming-label" data-i18n="exchange.peerCode">Код собеседника</strong>
+          <button class="chip" id="action-paste-code">
+            <i data-lucide="clipboard"></i><span data-i18n="exchange.paste">Вставить</span>
+          </button>
+        </div>
+
         <textarea
           id="incoming-code"
-          class="code"
+          class="code code--input"
           rows="6"
           autocomplete="off"
           spellcheck="false"
           data-i18n-placeholder="exchange.placeholder"
         ></textarea>
+
+        <p class="hint" id="incoming-hint" data-i18n="exchange.noTyping">Набирать вручную не нужно</p>
+
         <button class="button button--primary" id="action-accept" data-i18n="exchange.connect">
           Подключиться
         </button>
-      </div>
+      </section>
 
       <div class="notice notice--error" id="exchange-error" hidden>
         <i data-lucide="circle-x"></i>
@@ -260,6 +323,12 @@
         </div>
       </div>
 
+      <div class="grow"></div>
+
+      <p class="foot" id="exchange-foot">
+        <i data-lucide="info" id="exchange-foot-icon"></i><span id="exchange-foot-text"></span>
+      </p>
+
       <div class="row row--static row--busy" id="exchange-status" hidden>
         <i data-lucide="loader-circle"></i>
         <span id="exchange-status-text"></span>
@@ -271,31 +340,62 @@
       <video id="remote-video" class="call__video" autoplay playsinline></video>
 
       <div class="call__off" id="call-off">
-        <i data-lucide="video-off"></i>
-        <p data-i18n="call.peerCameraOff">Собеседник выключил камеру</p>
+        <i data-lucide="video-off" id="call-off-icon"></i>
+        <p id="call-off-text" data-i18n="call.peerCameraOff">Собеседник выключил камеру</p>
+      </div>
+
+      <!-- ожидание собеседника: своё видео крупно -->
+      <div class="waiting" id="call-waiting" hidden>
+        <div class="waiting__self">
+          <video id="waiting-video" autoplay playsinline muted></video>
+          <div class="waiting__off" id="waiting-off">
+            <i data-lucide="user-round"></i>
+            <span data-i18n="call.waitingSelf">Здесь вы — включите камеру</span>
+          </div>
+          <span class="waiting__tag" data-i18n="call.you">вы</span>
+        </div>
+        <div class="waiting__card">
+          <div class="waiting__head">
+            <i data-lucide="user-round-search"></i>
+            <strong data-i18n="call.waitingTitle">Собеседника ещё нет</strong>
+          </div>
+          <p class="hint" data-i18n="call.waitingNote">
+            Звонок начнётся сам, как только он перейдёт по ссылке. Пока можно проверить себя —
+            включить камеру и микрофон.
+          </p>
+          <button class="button button--ghost-light" id="action-copy-link-3">
+            <i data-lucide="copy"></i><span data-i18n="call.waitingCopy">Скопировать ссылку ещё раз</span>
+          </button>
+        </div>
       </div>
 
       <div class="call__top">
         <div class="badges">
           <button type="button" class="badge badge--ok badge--explained" id="badge-encryption">
             <i data-lucide="shield-check"></i><span data-i18n="call.e2ee">сквозное шифрование</span>
-            <span class="tooltip" id="encryption-tip" role="tooltip"></span>
+            <span class="tooltip" id="encryption-tip" role="tooltip">
+              <span class="tooltip__item" id="tip-transport">
+                <i data-lucide="circle-check"></i>
+                <span><strong data-i18n="encryption.network">Сеть не слышит</strong>
+                <em data-i18n="encryption.networkNote">Ни провайдер, ни Wi-Fi, ни маршрутизаторы по дороге</em></span>
+              </span>
+              <span class="tooltip__item" id="tip-e2ee">
+                <i data-lucide="circle-check"></i>
+                <span><strong data-i18n="encryption.server">Сервер не слышит</strong>
+                <em id="tip-e2ee-note" data-i18n="encryption.serverNote">Даже если звонок пойдёт через ретранслятор</em></span>
+              </span>
+            </span>
           </button>
-          <span class="badge" id="badge-connection">
-            <i data-lucide="zap"></i><span>—</span>
+          <span class="badge" id="badge-route">
+            <i data-lucide="zap" id="badge-route-icon"></i><span id="badge-route-text">—</span>
           </span>
           <span class="badge" id="badge-timer"><i data-lucide="timer"></i><span>00:00</span></span>
-          <span class="badge badge--warn" id="badge-self-mic" hidden>
-            <i data-lucide="mic-off"></i><span data-i18n="call.selfMicOff">ваш микрофон выключен</span>
-          </span>
-          <span class="badge badge--warn" id="badge-self-cam" hidden>
-            <i data-lucide="video-off"></i><span data-i18n="call.selfCamOff">ваша камера выключена</span>
-          </span>
-          <span class="badge badge--warn" id="badge-peer-mic" hidden>
-            <i data-lucide="mic-off"></i><span data-i18n="call.peerMicOff">микрофон выключен</span>
-          </span>
+          <button type="button" class="badge badge--quiet" id="action-stats-toggle" aria-expanded="false">
+            <i data-lucide="activity"></i><span data-i18n="stats.toggle">соединение</span>
+            <i data-lucide="chevron-down" class="badge__chevron"></i>
+          </button>
         </div>
-        <div class="stats-chip" id="stats"></div>
+        <div class="stats-chip" id="stats" hidden></div>
       </div>
 
       <div class="call__center">
@@ -309,16 +409,43 @@
         </div>
       </div>
 
+      <div class="toast toast--ok" id="peer-joined" hidden>
+        <i data-lucide="user-round-check"></i><span data-i18n="call.peerJoined">Собеседник подключился</span>
+      </div>
+
+      <!-- панель устройств -->
+      <div class="panel-pop" id="devices-panel" hidden>
+        <span class="section" data-i18n="devices.camera">КАМЕРА</span>
+        <div id="devices-cameras"></div>
+        <span class="section" data-i18n="devices.microphone">МИКРОФОН</span>
+        <div id="devices-mics"></div>
+      </div>
+
+      <!-- панель качества -->
+      <div class="panel-pop" id="quality-panel" hidden>
+        <span class="section" data-i18n="quality.resolution">РАЗРЕШЕНИЕ</span>
+        <div id="quality-options"></div>
+        <span class="section" data-i18n="quality.framerate">ЧАСТОТА КАДРОВ</span>
+        <div id="framerate-options"></div>
+      </div>
+
       <div class="call__bottom">
-        <div class="call__slot"></div>
+        <div class="call__slot">
+          <span class="mic-off" id="peer-mic-off" hidden data-i18n-aria="call.peerMicOff">
+            <i data-lucide="mic-off"></i>
+          </span>
+        </div>
         <div class="call__slot call__slot--center">
           <div class="controls">
             <button class="control" id="call-mic" aria-pressed="false"><i data-lucide="mic-off"></i></button>
             <button class="control" id="call-cam" aria-pressed="false"><i data-lucide="video-off"></i></button>
-            <label class="control control--select" data-i18n-aria="call.qualityHint">
-              <select id="quality-select"></select>
+            <button class="control control--wide" id="action-quality" aria-expanded="false">
+              <i data-lucide="gauge"></i><span id="quality-label">720p</span>
               <i data-lucide="chevron-down"></i>
-            </label>
+            </button>
+            <button class="control" id="action-devices" aria-expanded="false" data-i18n-aria="devices.title">
+              <i data-lucide="sliders-horizontal"></i>
+            </button>
             <button class="control control--danger" id="action-hangup">
               <i data-lucide="phone-off"></i>
               <span class="control__label" data-i18n="call.hangUp">Завершить</span>
@@ -332,6 +459,7 @@
               <i data-lucide="video-off"></i>
               <span data-i18n="call.you">вы</span>
             </div>
+            <span class="pip__mic" id="self-mic-off" hidden><i data-lucide="mic-off"></i></span>
           </div>
         </div>
       </div>

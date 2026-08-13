@@ -200,26 +200,120 @@ describe('isMdnsAddress', () => {
 
 describe('classifyConnection', () => {
   it('считает соединение ретранслируемым, если relay с любой стороны', () => {
-    expect(classifyConnection('relay', 'srflx', '198.51.100.20')).toBe('relay')
-    expect(classifyConnection('host', 'relay', '192.168.1.5')).toBe('relay')
+    expect(
+      classifyConnection({
+        localType: 'relay',
+        localAddress: '198.51.100.20',
+        remoteType: 'srflx',
+        remoteAddress: '203.0.113.7',
+      }),
+    ).toBe('relay')
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: '192.168.1.5',
+        remoteType: 'relay',
+        remoteAddress: '198.51.100.20',
+      }),
+    ).toBe('relay')
+  })
+
+  it('relay перевешивает всё остальное, даже глобальный IPv6 с обеих сторон', () => {
+    // Адреса тут глобальные, но трафик всё равно идёт через сервер.
+    expect(
+      classifyConnection({
+        localType: 'relay',
+        localAddress: '2a00:1450:4010:c0f::5e',
+        remoteType: 'host',
+        remoteAddress: '2606:4700:4700::1111',
+      }),
+    ).toBe('relay')
   })
 
   it('считает host-host в приватной сети локальным соединением', () => {
-    expect(classifyConnection('host', 'host', '192.168.1.5')).toBe('local')
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: '192.168.1.5',
+        remoteType: 'host',
+        remoteAddress: '192.168.1.9',
+      }),
+    ).toBe('local')
   })
 
   it('считает host-host через mDNS локальным соединением', () => {
-    expect(classifyConnection('host', 'host', 'f7a3b1c2-0d4e-4f60-9a1b-2c3d4e5f6071.local')).toBe(
-      'local',
-    )
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: 'f7a3b1c2-0d4e-4f60-9a1b-2c3d4e5f6071.local',
+        remoteType: 'host',
+        remoteAddress: '9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d.local',
+      }),
+    ).toBe('local')
   })
 
-  it('считает пробитое через STUN соединение прямым', () => {
-    expect(classifyConnection('srflx', 'srflx', '203.0.113.7')).toBe('direct')
-    expect(classifyConnection('prflx', 'srflx', '203.0.113.7')).toBe('direct')
+  it('считает host-host по глобальным IPv6 соединением по IPv6', () => {
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: '2a00:1450:4010:c0f::5e',
+        remoteType: 'host',
+        remoteAddress: '2606:4700:4700::1111',
+      }),
+    ).toBe('ipv6')
   })
 
-  it('считает host-host по публичным IPv6 прямым, а не локальным', () => {
-    expect(classifyConnection('host', 'host', '2a00:1450:4010:c0f::5e')).toBe('direct')
+  it('не называет IPv6 путь, где глобальный адрес только с одной стороны', () => {
+    // Вторая сторона в IPv4 — значит где-то по дороге всё же есть NAT.
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: '2a00:1450:4010:c0f::5e',
+        remoteType: 'srflx',
+        remoteAddress: '203.0.113.7',
+      }),
+    ).toBe('nat')
+  })
+
+  it('не считает IPv6 путь по link-local и unique-local адресам', () => {
+    expect(
+      classifyConnection({
+        localType: 'srflx',
+        localAddress: 'fe80::1c2d:3e4f:5a6b:7c8d',
+        remoteType: 'srflx',
+        remoteAddress: 'fd00::1',
+      }),
+    ).toBe('nat')
+  })
+
+  it('считает пробитое через STUN соединение прошедшим через NAT', () => {
+    expect(
+      classifyConnection({
+        localType: 'srflx',
+        localAddress: '203.0.113.7',
+        remoteType: 'srflx',
+        remoteAddress: '198.51.100.20',
+      }),
+    ).toBe('nat')
+    expect(
+      classifyConnection({
+        localType: 'prflx',
+        localAddress: '203.0.113.7',
+        remoteType: 'srflx',
+        remoteAddress: '198.51.100.20',
+      }),
+    ).toBe('nat')
+  })
+
+  it('считает host-host по публичным IPv4 путём через NAT, а не локальным', () => {
+    // Обеих сторон снаружи видно напрямую, но это уже не локальная сеть.
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: '203.0.113.7',
+        remoteType: 'host',
+        remoteAddress: '198.51.100.20',
+      }),
+    ).toBe('nat')
   })
 })

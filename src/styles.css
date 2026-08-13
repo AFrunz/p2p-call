@@ -439,6 +439,74 @@ svg {
   background: var(--surface);
 }
 
+/* --- строка-раскрывашка --- */
+
+/* Шеврон уезжает вправо и переворачивается, когда блок под строкой раскрыт. */
+.row--expand {
+  font-size: 13.5px;
+}
+
+.row__chevron {
+  width: 17px;
+  height: 17px;
+  margin-left: auto;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.row--expand[aria-expanded='true'] .row__chevron {
+  transform: rotate(180deg);
+}
+
+/* --- шаги мастера обмена кодами --- */
+
+/* Пройденный шаг: галочка и ссылка «показать», сама строка уже не кликается. */
+.row--done {
+  cursor: default;
+  font-size: 13.5px;
+}
+
+.row--done:hover {
+  background: var(--surface);
+}
+
+.row--done > svg:first-child {
+  width: 17px;
+  height: 17px;
+  color: var(--ok);
+}
+
+.row--done > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.row__action {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.row__action:hover {
+  text-decoration: underline;
+}
+
+/* Следующий шаг: виден заранее, но приглушён — до него ещё не дошли. */
+.row--next {
+  gap: 11px;
+  cursor: default;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.row--next:hover {
+  background: var(--surface);
+}
+
 /* ================= Карточки ================= */
 .card {
   display: flex;
@@ -476,29 +544,39 @@ svg {
   line-height: 1.45;
 }
 
-.bullets {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* Карточка текущего шага: акцентная обводка выделяет её среди свёрнутых соседей. */
+.card--active {
+  border: 1px solid var(--accent);
 }
 
-.bullets li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+.card--active .card__head > svg {
+  color: var(--accent);
+}
+
+/* маленькая кнопка в заголовке карточки («Вставить») */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
   font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--muted);
+  line-height: 1.2;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.bullets svg {
-  width: 15px;
-  height: 15px;
-  margin-top: 2px;
-  color: var(--ok);
+.chip:hover {
+  background: #262b36;
+}
+
+.chip svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
 }
 
 .link-box {
@@ -556,6 +634,19 @@ svg {
   word-break: break-all;
 }
 
+/* В отличие от `.code`, сюда вставляют — поле подсвечено акцентом как активное. */
+.code--input {
+  padding: 14px;
+  border-color: var(--accent);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+.code--input::placeholder {
+  font-family: var(--font);
+  color: var(--muted);
+}
+
 /* ================= Главный экран / общий каркас ================= */
 .app {
   display: flex;
@@ -598,13 +689,6 @@ svg {
   color: var(--muted);
 }
 
-.stage-column {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-}
-
 .side-column {
   display: flex;
   flex-direction: column;
@@ -612,130 +696,133 @@ svg {
   min-height: 0;
 }
 
-/* ================= Превью камеры ================= */
-.preview {
-  position: relative;
-  overflow: hidden;
-  border-radius: 14px;
-  background: #000;
-  aspect-ratio: 4 / 3;
+/* ================= Сравнение режимов ================= */
+
+/*
+ * Плюсы и минусы двух режимов стоят рядом: выбор делается их сопоставлением,
+ * поэтому колонки не схлопываются в одну даже на телефоне — только мельчает шрифт.
+ */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding: 13px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
-.preview video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.preview__off {
-  position: absolute;
-  inset: 0;
+.compare__col {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 20px;
-  text-align: center;
-  color: var(--video-placeholder);
+  gap: 9px;
+  min-width: 0;
 }
 
-.preview__off svg {
-  width: 30px;
-  height: 30px;
+.compare__col strong {
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
-.preview__off p {
-  font-size: 13px;
-}
-
-.preview__toggles {
-  position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+.compare__item {
   display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.compare__item svg {
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+}
+
+/* плюс — зелёный, минус — красный */
+.compare__item--pro svg {
+  color: var(--ok);
+}
+
+.compare__item--con svg {
+  color: var(--danger);
+}
+
+/* ================= Что делать: нумерованные шаги ================= */
+.steps {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
-.toggle {
+.step {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.step__num {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
-  padding: 0;
-  border: 1px solid #ffffff33;
-  border-radius: 50%;
-  background: #00000099;
-  color: #c8ceda;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: background-color 0.15s ease, color 0.15s ease;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.toggle svg {
-  width: 21px;
-  height: 21px;
-}
-
-/* включено */
-.toggle[aria-pressed='true'] {
-  background: var(--accent);
-  border-color: transparent;
-  color: #fff;
-}
-
-.toggle:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* ================= Выбор устройств ================= */
-.devices {
+/* ================= Что нужно для своего сервера ================= */
+.need {
   display: flex;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 11px;
 }
 
-.device {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 44px;
-  padding: 0 12px;
-  border-radius: 9px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.device > svg:first-child {
+.need > svg {
   width: 17px;
   height: 17px;
-  color: var(--muted);
+  margin-top: 1px;
+  color: var(--accent);
 }
 
-.device select {
-  flex: 1;
+.need > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  border: 0;
-  background: transparent;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  cursor: pointer;
 }
 
-.device__chevron,
-.device > svg:last-child {
-  width: 16px;
-  height: 16px;
+.need strong {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* пояснение под заголовком строки — em здесь только разметочный, не курсив */
+.need em {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--muted);
+}
+
+/* ссылка на инструкцию отделена от списка чертой */
+.hint--doc {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.hint--doc svg {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
 }
 
 /* ================= Табы ================= */
@@ -784,21 +871,35 @@ svg {
 }
 
 /* ================= Вердикт проверки сети ================= */
+
+/* Строка статуса раскрывает список проверок, поэтому это кнопка во всю ширину. */
 .verdict {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  width: 100%;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
 }
 
-.verdict > svg {
+.verdict > svg:first-child {
   width: 20px;
   height: 20px;
   margin-top: 1px;
   color: var(--muted);
+}
+
+.verdict__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .verdict strong {
@@ -808,10 +909,22 @@ svg {
 }
 
 .verdict p {
-  margin-top: 4px;
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--muted);
+}
+
+/* шеврон всегда приглушён — цвет состояния несёт иконка слева */
+.verdict__chevron {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.verdict[aria-expanded='true'] .verdict__chevron {
+  transform: rotate(180deg);
 }
 
 .verdict[data-state='ok'] {
@@ -819,7 +932,7 @@ svg {
   border-color: var(--ok);
 }
 
-.verdict[data-state='ok'] > svg {
+.verdict[data-state='ok'] > svg:first-child {
   color: var(--ok);
 }
 
@@ -828,7 +941,7 @@ svg {
   border-color: var(--danger);
 }
 
-.verdict[data-state='fail'] > svg {
+.verdict[data-state='fail'] > svg:first-child {
   color: var(--danger);
 }
 
@@ -837,7 +950,7 @@ svg {
   border-color: var(--warn);
 }
 
-.verdict[data-state='warn'] > svg {
+.verdict[data-state='warn'] > svg:first-child {
   color: var(--warn);
 }
 
@@ -905,6 +1018,132 @@ svg {
   font-size: 12px;
   line-height: 1.45;
   color: var(--muted);
+}
+
+/* ================= Обмен кодами ================= */
+
+/* В мастере у шапки есть кнопка «назад» — заголовок встаёт с ней в одну линию. */
+.head--wizard {
+  align-items: center;
+}
+
+/* Две полоски вместо надписи «шаг N»: сколько пройдено, видно сразу. */
+.progress {
+  display: flex;
+  gap: 6px;
+}
+
+.progress__bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+.progress__bar.is-done {
+  background: var(--accent);
+}
+
+/*
+ * Код длинный и читать его не нужно, поэтому вместо простыни показываем
+ * «конверт»: обрезанный моноширинный фрагмент и размер.
+ */
+.envelope {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.envelope__code {
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.envelope__size {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.envelope__size svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* --- обратный отсчёт --- */
+
+/*
+ * Окно на перенос кода ограничено, и его остаток нагляднее кольцом, чем цифрой:
+ * долю закрашенной дуги задаёт переменная --progress (от 0 до 1), её ставит скрипт.
+ */
+.countdown {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: #2a2113;
+}
+
+.countdown .hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+
+.countdown__ring {
+  --progress: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--warn) calc(var(--progress) * 360deg), #ffffff14 0);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* вырезка внутри кольца — цвета подложки блока */
+.countdown__ring::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: #2a2113;
+}
+
+.countdown__ring > * {
+  position: relative;
+}
+
+/* сноска внизу экрана */
+.foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.foot svg {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
 }
 
 /* ================= Экран звонка ================= */
@@ -1002,6 +1241,28 @@ svg {
   color: #1a1408;
 }
 
+/* Бейдж-кнопка: раскрывает статистику, поэтому приглушён и с шевроном. */
+.badge--quiet {
+  border: 0;
+  background: #1f2836cc;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.badge--quiet > svg:first-child {
+  color: #c8ceda;
+}
+
+.badge__chevron {
+  color: #c8ceda;
+  transition: transform 0.15s ease;
+}
+
+.badge--quiet[aria-expanded='true'] .badge__chevron {
+  transform: rotate(180deg);
+}
+
 /* Бейдж с пояснением: состояний у шифрования несколько, и одно слово их не различает. */
 .badge--explained {
   position: relative;
@@ -1016,9 +1277,12 @@ svg {
   top: calc(100% + 8px);
   left: 0;
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   width: max-content;
   max-width: min(320px, calc(100vw - 32px));
-  padding: 10px 12px;
+  padding: 14px 16px;
   border-radius: 12px;
   background: #0d1017f2;
   color: #e8ecf4;
@@ -1049,6 +1313,42 @@ svg {
   .tooltip {
     transition: none;
   }
+}
+
+/* Строка подсказки: что именно защищено — иконка, короткий заголовок, пояснение. */
+.tooltip__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.tooltip__item > svg {
+  width: 17px;
+  height: 17px;
+  color: var(--ok);
+}
+
+.tooltip__item[data-state='fail'] > svg {
+  color: var(--danger);
+}
+
+.tooltip__item > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tooltip__item strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tooltip__item em {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 .stats-chip {
@@ -1235,27 +1535,35 @@ svg {
   color: #fff;
 }
 
-.control--select {
+/* пока открыта своя панель, кнопка подсвечена как нажатая */
+.control[aria-expanded='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Кнопка с подписью: рядом с иконкой стоит текущее значение и шеврон. */
+.control--wide {
   width: auto;
-  gap: 6px;
-  padding: 0 12px 0 14px;
+  gap: 8px;
+  padding: 0 16px;
+  font-size: 13.5px;
 }
 
-.control--select select {
-  appearance: none;
-  -webkit-appearance: none;
-  max-width: 140px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 13px;
-  cursor: pointer;
-  text-overflow: ellipsis;
-}
-
-.control--select svg {
+.control--wide > svg {
   width: 16px;
   height: 16px;
+}
+
+.control--wide > svg:last-child {
+  width: 15px;
+  height: 15px;
+  color: #8d96a8;
+  transition: transform 0.15s ease;
+}
+
+.control--wide[aria-expanded='true'] > svg:last-child {
+  color: #fff;
+  transform: rotate(180deg);
 }
 
 /* ================= PiP ================= */
@@ -1293,6 +1601,251 @@ svg {
 .pip__off svg {
   width: 18px;
   height: 18px;
+}
+
+/* ================= Выключённый микрофон ================= */
+
+/*
+ * У собеседника нет своей плитки — про его выключённый микрофон говорит
+ * отдельный значок в левом нижнем углу экрана.
+ */
+.mic-off {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+}
+
+.mic-off svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* тот же значок, но внутри своего видео и мельче */
+.pip__mic {
+  position: absolute;
+  left: 10px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+}
+
+.pip__mic svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ================= Ожидание собеседника ================= */
+
+/*
+ * Пока второго участника нет, показывать нечего — своё видео занимает центр,
+ * а под ним карточка с объяснением и ссылкой.
+ */
+.waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: calc(84px + env(safe-area-inset-top)) 22px calc(124px + env(safe-area-inset-bottom));
+}
+
+.waiting__self {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid #ffffff1f;
+  border-radius: 12px;
+  background: #12151c;
+}
+
+.waiting__self video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.waiting__off {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  color: var(--video-placeholder);
+  font-size: 13px;
+}
+
+.waiting__off svg {
+  width: 32px;
+  height: 32px;
+}
+
+.waiting__tag {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #0a0c10cc;
+  color: #c8ceda;
+  font-size: 11.5px;
+}
+
+.waiting__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 560px;
+  padding: 16px;
+  border: 1px solid #ffffff1f;
+  border-radius: 12px;
+  background: #141821e6;
+  backdrop-filter: blur(10px);
+}
+
+.waiting__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.waiting__head svg {
+  width: 17px;
+  height: 17px;
+  color: var(--warn);
+}
+
+.waiting__head strong {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* кнопка поверх видео: светлая, а не глухая как на светлых экранах */
+.button--ghost-light {
+  padding: 10px 14px;
+  border-radius: 9px;
+  background: #ffffff14;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.button--ghost-light:hover {
+  background: #ffffff24;
+}
+
+/* ================= Всплывающие панели звонка ================= */
+
+/*
+ * Устройства и качество открываются над кнопками управления: на десктопе
+ * узкой колонкой по центру, на телефоне — листом во всю ширину внизу.
+ */
+.panel-pop {
+  position: absolute;
+  left: 50%;
+  bottom: calc(108px + env(safe-area-inset-bottom));
+  z-index: 20;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 340px;
+  max-width: calc(100% - 28px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid #ffffff1f;
+  border-radius: 14px;
+  background: #141821f2;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px #0009;
+}
+
+/* между блоками панели воздуха больше, чем между заголовком и его строками */
+.panel-pop > .section:not(:first-child) {
+  margin-top: 7px;
+}
+
+/* строки вариантов наполняет скрипт — контейнер только раскладывает их */
+.panel-pop > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* --- строка варианта --- */
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 13px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover {
+  background: #ffffff0f;
+}
+
+.option > svg:first-child {
+  width: 16px;
+  height: 16px;
+  color: #8d96a8;
+}
+
+.option span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* галочка — последняя иконка строки: место под неё есть всегда, видна у выбранного */
+.option > svg:last-child {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  color: var(--accent);
+  visibility: hidden;
+}
+
+.option.is-active {
+  background: #ffffff14;
+}
+
+.option.is-active > svg:last-child {
+  visibility: visible;
 }
 
 /* ================= Настройки ================= */
@@ -1385,7 +1938,40 @@ svg {
   box-shadow: 0 8px 24px #00000066;
 }
 
-/* ================= ПК: две колонки на всю высоту ================= */
+/*
+ * Уведомление поверх звонка: внизу его перекрыли бы кнопки управления,
+ * поэтому оно всплывает сверху, под бейджами.
+ */
+.toast--ok {
+  top: calc(96px + env(safe-area-inset-top));
+  bottom: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-color: var(--ok);
+  border-radius: 12px;
+  background: #12281df2;
+  color: #fff;
+  font-weight: 500;
+  backdrop-filter: blur(8px);
+}
+
+.toast--ok svg {
+  width: 18px;
+  height: 18px;
+  color: var(--ok);
+}
+
+/*
+ * Главный экран — одна колонка: на телефоне во всю ширину,
+ * на широком экране по центру, шире 640 строки читать неудобно.
+ */
+#screen-home {
+  max-width: 640px;
+}
+
+/* ================= ПК ================= */
 /* На широком экране у кнопки настроек есть место на подпись — в макете она с текстом. */
 @media (min-width: 900px) {
   #action-settings {
@@ -1408,33 +1994,12 @@ svg {
 
 @media (min-width: 900px) {
   #screen-home {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 430px;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 20px 24px;
-    max-width: 1280px;
-    height: 100dvh;
-    min-height: 0;
-    padding: calc(26px + env(safe-area-inset-top)) 28px 26px;
-  }
-
-  #screen-home .head {
-    grid-column: 1 / -1;
+    gap: 22px;
+    padding: calc(28px + env(safe-area-inset-top)) 28px 28px;
   }
 
   #screen-home .head h1 {
     font-size: 22px;
-  }
-
-  /* превью забирает всю свободную высоту колонки */
-  #screen-home .preview {
-    flex: 1;
-    aspect-ratio: auto;
-    min-height: 0;
-  }
-
-  #screen-home .panel {
-    overflow-y: auto;
   }
 }
 
@@ -1448,56 +2013,7 @@ svg {
       calc(14px + env(safe-area-inset-left));
   }
 
-  /* Бейдж с пояснением: состояний у шифрования несколько, и одно слово их не различает. */
-.badge--explained {
-  position: relative;
-  border: 0;
-  font: inherit;
-  font-size: 12px;
-  cursor: help;
-}
-
-.tooltip {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 5;
-  width: max-content;
-  max-width: min(320px, calc(100vw - 32px));
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #0d1017f2;
-  color: #e8ecf4;
-  font-size: 12px;
-  line-height: 1.45;
-  text-align: left;
-  white-space: normal;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 24px #0009;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.12s ease;
-}
-
-.badge--explained:hover .tooltip,
-.badge--explained:focus-visible .tooltip {
-  opacity: 1;
-  visibility: visible;
-}
-
-/* У правого края экрана всплывающее окно уезжает за границу — прижимаем вправо. */
-.badges > .badge--explained:last-child .tooltip {
-  left: auto;
-  right: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tooltip {
-    transition: none;
-  }
-}
-
-.stats-chip {
+  .stats-chip {
     gap: 14px;
     justify-content: flex-start;
   }
@@ -1510,8 +2026,8 @@ svg {
       calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
   }
 
-  /* пустой слот на телефоне только мешает */
-  .call__slot:not(.call__slot--center):not(.call__slot--end) {
+  /* пустой слот на телефоне только мешает — но значок молчащего микрофона нужен */
+  .call__slot:not(.call__slot--center):not(.call__slot--end):not(:has(> :not([hidden]))) {
     display: none;
   }
 

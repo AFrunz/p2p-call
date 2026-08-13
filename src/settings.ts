@@ -2,8 +2,8 @@ import { isLocale } from './i18n/index.js'
 import type { Locale } from './i18n/index.js'
 import { message } from './i18n/message.js'
 import type { Message } from './i18n/message.js'
-import { QUALITY_PRESETS, isQualityPreset } from './media/quality.js'
-import type { QualityPreset } from './media/quality.js'
+import { FRAME_RATES, QUALITY_PRESETS, isFrameRate, isQualityPreset } from './media/quality.js'
+import type { FrameRate, QualityPreset } from './media/quality.js'
 import { isAllowedServer } from './signaling/link.js'
 
 const STORAGE_KEY = 'p2p-call/settings/v1'
@@ -14,6 +14,8 @@ export interface Settings {
   /** null — берём язык браузера. */
   locale: Locale | null
   quality: QualityPreset
+  /** Частота кадров: задаётся отдельно от разрешения. */
+  frameRate: FrameRate
   cameraId: string | null
   microphoneId: string | null
   /** Через сколько секунд после готовности ответа обе стороны начнут проверку. */
@@ -24,6 +26,9 @@ export const DEFAULT_SETTINGS: Settings = {
   signalingServer: null,
   locale: null,
   quality: 'auto',
+  // Тридцать кадров тянет любая камера и любой канал; шестьдесят — осознанный
+  // выбор ради плавности, и платить за него полосой должен тот, кто попросил.
+  frameRate: 30,
   cameraId: null,
   microphoneId: null,
   connectDelay: 60,
@@ -73,6 +78,7 @@ export function loadSettings(storage: Storage): Settings {
     signalingServer: typeof server === 'string' && isAllowedServer(server) ? server : null,
     locale: isLocale(locale) ? locale : null,
     quality: isQualityPreset(quality) ? quality : DEFAULT_SETTINGS.quality,
+    frameRate: isFrameRate(source['frameRate']) ? source['frameRate'] : DEFAULT_SETTINGS.frameRate,
     cameraId: stringOrNull(source['cameraId']),
     microphoneId: stringOrNull(source['microphoneId']),
     connectDelay: isConnectDelay(source['connectDelay'])
@@ -98,6 +104,16 @@ export function saveSettings(storage: Storage, settings: Settings): void {
  */
 export function qualityOptions(): { value: QualityPreset; labelKey: string }[] {
   return QUALITY_PRESETS.map((value) => ({ value, labelKey: `quality.${value}` }))
+}
+
+/**
+ * Частоты для второй группы переключателей.
+ *
+ * Подпись у всех одна и та же с подстановкой числа: заводить по ключу на
+ * значение значило бы дублировать в словарях одну и ту же фразу.
+ */
+export function frameRateOptions(): { value: FrameRate; labelKey: string; params: { value: number } }[] {
+  return FRAME_RATES.map((value) => ({ value, labelKey: 'quality.fps', params: { value } }))
 }
 
 export function isConnectDelay(value: unknown): value is number {

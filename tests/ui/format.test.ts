@@ -66,17 +66,18 @@ describe('formatResolution', () => {
 })
 
 describe('describeConnection', () => {
-  it('различает локальное, прямое и ретранслируемое соединение', () => {
-    expect(describeConnection('local')).toEqual({ key: 'connection.local' })
-    expect(describeConnection('direct')).toEqual({ key: 'connection.direct' })
-    expect(describeConnection('relay')).toEqual({ key: 'connection.relay' })
+  it('различает все четыре пути соединения', () => {
+    expect(describeConnection('local')).toEqual({ key: 'route.local' })
+    expect(describeConnection('ipv6')).toEqual({ key: 'route.ipv6' })
+    expect(describeConnection('nat')).toEqual({ key: 'route.nat' })
+    expect(describeConnection('relay')).toEqual({ key: 'route.relay' })
   })
 
-  it('пока тип неизвестен, не утверждает, что соединение прямое', () => {
+  it('пока путь неизвестен, не утверждает, что соединение прямое', () => {
     // Соединение вполне может оказаться ретранслируемым — до выбора пары
     // кандидатов мы просто молчим.
-    expect(describeConnection(null)).toEqual({ key: 'connection.pending' })
-    expect(describeConnection(null).key).not.toBe(describeConnection('direct').key)
+    expect(describeConnection(null)).toEqual({ key: 'route.pending' })
+    expect(describeConnection(null).key).not.toBe(describeConnection('nat').key)
     expect(describeConnection(null).key).not.toBe(describeConnection('local').key)
   })
 })

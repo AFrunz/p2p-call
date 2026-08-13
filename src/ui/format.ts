@@ -1,6 +1,6 @@
 import { message } from '../i18n/message.js'
 import type { Message } from '../i18n/message.js'
-import type { ConnectionKind } from '../net/nat.js'
+import type { ConnectionRoute } from '../net/nat.js'
 
 /** Битрейт в человеческом виде: биты — единица, в которой считают каналы связи. */
 export function formatBitrate(bitsPerSecond: number): Message {
@@ -42,19 +42,21 @@ export function formatResolution(width: number | null, height: number | null): M
     : message('format.resolution', { width, height })
 }
 
-/** Подпись о том, как именно установлено соединение. */
-export function describeConnection(kind: ConnectionKind | null): Message {
-  switch (kind) {
+/** Подпись о том, каким путём прошло соединение. */
+export function describeConnection(route: ConnectionRoute | null): Message {
+  switch (route) {
     case 'local':
-      return message('connection.local')
-    case 'direct':
-      return message('connection.direct')
+      return message('route.local')
+    case 'ipv6':
+      return message('route.ipv6')
+    case 'nat':
+      return message('route.nat')
     case 'relay':
-      return message('connection.relay')
+      return message('route.relay')
     default:
-      // Пока тип пары кандидатов неизвестен, называть соединение прямым нельзя:
+      // Пока пара кандидатов не выбрана, называть соединение прямым нельзя:
       // оно вполне может оказаться ретранслируемым.
-      return message('connection.pending')
+      return message('route.pending')
   }
 }
 
