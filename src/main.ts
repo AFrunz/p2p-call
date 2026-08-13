@@ -825,6 +825,10 @@ async function enterCall(): Promise<void> {
 
   await fillDevices()
   renderQualityPanel()
+  // Характеристики соединения — справка по требованию, а не постоянная
+  // строка поверх собеседника: в новый звонок входим со свёрнутой панелью.
+  show('stats', false)
+  el('action-stats-toggle').setAttribute('aria-expanded', 'false')
 }
 
 /**
@@ -1172,6 +1176,18 @@ function wire(): void {
   // над кнопками перекрыли бы и звонок, и друг друга.
   on('action-devices', 'click', () => togglePanel('devices'))
   on('action-quality', 'click', () => togglePanel('quality'))
+
+  // Всплывающие панели закрываются нажатием мимо: искать крестик в углу на
+  // телефоне неудобно, а на десктопе это давно привычка.
+  document.addEventListener('pointerdown', (event) => {
+    const target = event.target
+    if (!(target instanceof Node)) return
+
+    const inside = ['devices-panel', 'quality-panel', 'action-devices', 'action-quality'].some(
+      (id) => el(id).contains(target),
+    )
+    if (!inside) closePanels()
+  })
 
   for (const prefix of ['home-error', 'exchange-error']) {
     on(`${prefix}-close`, 'click', () => show(prefix, false))
