@@ -221,6 +221,26 @@ async function startPreview(): Promise<void> {
   syncAvailability()
 }
 
+/**
+ * Отпускает захват после звонка.
+ *
+ * Пока микрофон захвачен, телефон держит режим разговора: динамик в разговорный,
+ * громкость по своей шкале. Раньше это снималось только закрытием вкладки.
+ * Камеру и микрофон вернёт первое же нажатие на тумблер.
+ */
+function releaseMedia(): void {
+  for (const id of ['remote-video', 'local-video', 'preview-video']) attachStream(id, null)
+
+  stopStream(previewStream)
+  previewStream = null
+
+  renderToggleIcons(false, false)
+  setPressed('toggle-mic', false)
+  setPressed('toggle-cam', false)
+  setText('preview-hint', t('preview.off'))
+  show('preview-off', true)
+}
+
 function renderPreviewState(): void {
   const camera = previewStream?.getVideoTracks()[0]
   show('preview-off', camera?.enabled !== true)
@@ -240,6 +260,10 @@ function syncAvailability(): void {
  * Источник правды — дорожки локального потока, поэтому состояние берём из них.
  */
 async function toggleTrack(kind: 'audio' | 'video'): Promise<void> {
+  // После звонка захвата нет вовсе: заводим пустой поток, его наполнит
+  // acquireTrack. Так первое нажатие возвращает устройство без перезагрузки.
+  if (session === null && previewStream === null) previewStream = new MediaStream()
+
   const stream = session?.media.local ?? previewStream
   let tracks = kind === 'audio' ? stream?.getAudioTracks() : stream?.getVideoTracks()
 
@@ -283,6 +307,7 @@ async function acquireTrack(kind: 'audio' | 'video', stream: MediaStream): Promi
   track.enabled = false
   stream.addTrack(track)
   if (session !== null) await session.attachTrack(track)
+  else attachStream('preview-video', stream)
 
   syncAvailability()
   return true
@@ -557,10 +582,12 @@ function onPhase(view: SessionView): void {
     case 'failed':
       // Экран выбирает showFailure: он знает, откуда пришёл провал.
       stopTimer()
+      releaseMedia()
       break
 
     case 'ended':
       stopTimer()
+      releaseMedia()
       showEnded(view)
       break
   }

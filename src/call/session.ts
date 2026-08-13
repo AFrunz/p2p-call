@@ -1123,6 +1123,13 @@ export class CallSession {
     this.channel?.close()
     this.connection?.close()
     this.worker?.terminate()
+
+    // Входящие дорожки тоже надо погасить: пока они живы, телефон считает,
+    // что разговор продолжается.
+    for (const track of this.remoteStream.getTracks()) {
+      track.stop()
+      this.remoteStream.removeTrack(track)
+    }
     if (this.ownsStream) stopStream(this.localStream)
 
     this.signaling = null
