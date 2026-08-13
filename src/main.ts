@@ -1359,6 +1359,9 @@ function exposeDiagnostics(): void {
 }
 
 function start(): void {
+  // Разметка становится видимой, когда стили применены и иконки отрисованы:
+  // до этого показывать нечего, кроме голого html.
+  document.body.classList.add('is-ready')
   exposeDiagnostics()
   applyTranslations()
   renderQualityPanel()
