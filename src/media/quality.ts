@@ -14,9 +14,10 @@ export interface PresetSpec {
 const AUTO_CAPTURE: PresetSpec = { width: 1280, height: 720, frameRate: 30, maxBitrate: 0 }
 
 const SPECS: Record<Exclude<QualityPreset, 'auto'>, PresetSpec> = {
-  '360p': { width: 640, height: 360, frameRate: 30, maxBitrate: 800_000 },
-  '720p': { width: 1280, height: 720, frameRate: 30, maxBitrate: 2_000_000 },
-  '1080p': { width: 1920, height: 1080, frameRate: 30, maxBitrate: 4_000_000 },
+  '360p': { width: 640, height: 360, frameRate: 30, maxBitrate: 1_000_000 },
+  '720p': { width: 1280, height: 720, frameRate: 30, maxBitrate: 3_000_000 },
+  // Для 1080p30 четырёх мегабит впритык: кодек начинает мылить на движении.
+  '1080p': { width: 1920, height: 1080, frameRate: 30, maxBitrate: 6_000_000 },
 }
 
 /** Числовые параметры пресета. Для `auto` возвращает null — потолок не задаём. */

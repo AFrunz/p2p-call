@@ -313,10 +313,17 @@ export async function applyQuality(
   if (track !== undefined) {
     try {
       await track.applyConstraints(presetToConstraints(preset))
-    } catch {
-      // Камера может не уметь запрошенный режим: это не повод рвать звонок,
-      // ограничения на отправителе всё равно применятся.
+    } catch (error) {
+      // Камера может не уметь запрошенный режим — звонок из-за этого рвать
+      // незачем, но молчать нельзя: именно здесь теряется разрешение.
+      console.debug('[p2p] камера отказала в режиме:', error instanceof Error ? error.name : error)
     }
+
+    const settings = track.getSettings()
+    console.debug(
+      `[p2p] камера отдаёт ${settings.width}x${settings.height}@${settings.frameRate}` +
+        ` (просили ${preset})`,
+    )
   }
 
   const sender = connection.getSenders().find((candidate) => candidate.track?.kind === 'video')
@@ -329,7 +336,14 @@ export async function applyQuality(
     ...encoding,
     ...wanted,
   }))
-  await sender.setParameters(parameters)
+  // degradationPreference намеренно не трогаем: «держать разрешение» лечит
+  // мыло ценой рывков, а «держать плавность» — наоборот. Что именно жертвовать,
+  // видно только по статистике, поэтому сначала измеряем.
+  try {
+    await sender.setParameters(parameters)
+  } catch (error) {
+    console.debug('[p2p] параметры отправителя не приняты:', error instanceof Error ? error.name : error)
+  }
 }
 
 /** Останавливает все дорожки — иначе индикатор камеры останется гореть. */

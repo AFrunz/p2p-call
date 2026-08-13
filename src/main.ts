@@ -35,7 +35,13 @@ import {
   show,
   showOnly,
 } from './ui/dom.js'
-import { describeConnection, formatBitrate, formatLoss, formatRoundTrip } from './ui/format.js'
+import {
+  describeConnection,
+  formatBitrate,
+  formatLoss,
+  formatResolution,
+  formatRoundTrip,
+} from './ui/format.js'
 import { iconIn, renderIcons } from './ui/icons.js'
 
 const SCREENS = ['screen-home', 'screen-exchange', 'screen-call', 'screen-ended'] as const
@@ -572,12 +578,20 @@ function onPhase(view: SessionView): void {
       screen('screen-exchange')
       break
 
-    case 'connected':
-      attachStream('remote-video', session?.media.remote ?? null)
+    case 'connected': {
+      const remote = session?.media.remote ?? null
+      console.debug(
+        `[p2p] входящие дорожки: ${(remote?.getTracks() ?? [])
+          .map((track) => `${track.kind}(${track.enabled ? 'вкл' : 'выкл'},${track.readyState})`)
+          .join(', ') || 'ни одной'}`,
+      )
+
+      attachStream('remote-video', remote)
       attachStream('local-video', session?.media.local ?? null)
       startTimer()
       screen('screen-call')
       break
+    }
 
     case 'failed':
       // Экран выбирает showFailure: он знает, откуда пришёл провал.
@@ -610,6 +624,7 @@ function renderCall(view: SessionView): void {
 
   show('call-off', view.peerMuted.video)
   show('badge-peer-mic', view.peerMuted.audio)
+  show('badge-self-mic', view.muted.audio && view.canSend.audio)
   show('pip-off', view.muted.video)
   setPressed('call-mic', !view.muted.audio)
   setPressed('call-cam', !view.muted.video)
@@ -660,7 +675,14 @@ function renderStats(view: SessionView): void {
     ['stats.outbound', tm(formatBitrate(stats.outboundBitrate))],
     ['stats.inbound', tm(formatBitrate(stats.inboundBitrate))],
     ['stats.latency', tm(formatRoundTrip(stats.roundTripMs))],
+    ['stats.jitter', tm(formatRoundTrip(stats.jitterMs))],
     ['stats.loss', formatLoss(stats.packetLoss)],
+    [
+      'stats.mic',
+      stats.micLevel === null ? '—' : `${Math.round(stats.micLevel * 100)}%`,
+    ],
+    ['stats.resolution', tm(formatResolution(stats.frameWidth, stats.frameHeight))],
+    ['stats.fps', stats.fps === null ? '—' : String(Math.round(stats.fps))],
   ]
 
   el('stats').replaceChildren(

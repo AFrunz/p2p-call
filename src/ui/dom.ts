@@ -65,9 +65,24 @@ export function fillSelect(target: HTMLSelectElement | string, options: Option[]
   node.value = options.some((option) => option.value === selected) ? selected : (options[0]?.value ?? '')
 }
 
-/** Подставляет поток в `<video>`, ничего не делая при повторной установке того же. */
+/**
+ * Подставляет поток в `<video>` и запускает воспроизведение.
+ *
+ * Атрибута autoplay мало: браузер может отказать в автозапуске со звуком, и
+ * тогда элемент молча остаётся на паузе. Об отказе надо знать — иначе он
+ * выглядит как «звук не передаётся».
+ */
 export function attachStream(target: HTMLVideoElement | string, stream: MediaStream | null): void {
   const node = typeof target === 'string' ? el<HTMLVideoElement>(target) : target
   if (node.srcObject === stream) return
+
   node.srcObject = stream
+  if (stream === null) return
+
+  void node.play().catch((error: unknown) => {
+    console.debug(
+      `[p2p] воспроизведение ${node.id} не запустилось:`,
+      error instanceof Error ? error.name : error,
+    )
+  })
 }

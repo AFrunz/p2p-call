@@ -52,6 +52,17 @@ export interface CallStats {
   /** Разрешение принимаемого видео. */
   frameWidth: number | null
   frameHeight: number | null
+  /** Частота принимаемого видео: по ней видно рывки. */
+  fps: number | null
+  /** Разброс задержки пакетов, мс: он и вызывает дёрганое воспроизведение. */
+  jitterMs: number | null
+  /**
+   * Что слышит наш микрофон, 0..1.
+   *
+   * Ноль при включённом микрофоне означает, что звука нет на входе, а не в
+   * передаче: выбран не тот вход, приглушено в системе, закрыт шторкой.
+   */
+  micLevel: number | null
 }
 
 interface Snapshot {
@@ -75,6 +86,9 @@ export class StatsCollector {
     let packetsLost = 0
     let frameWidth: number | null = null
     let frameHeight: number | null = null
+    let fps: number | null = null
+    let jitterMs: number | null = null
+    let micLevel: number | null = null
     let kind: ConnectionKind | null = null
 
     const candidates = new Map<string, { type: CandidateType; address: string }>()
@@ -94,6 +108,10 @@ export class StatsCollector {
       const stat = entry as Record<string, unknown>
 
       switch (stat['type']) {
+        case 'media-source':
+          if (stat['kind'] === 'audio') micLevel = numberOrNull(stat['audioLevel'])
+          break
+
         case 'outbound-rtp':
           bytesSent += Number(stat['bytesSent'] ?? 0)
           timestamp = Math.max(timestamp, Number(stat['timestamp'] ?? 0))
@@ -107,6 +125,11 @@ export class StatsCollector {
           if (stat['kind'] === 'video') {
             frameWidth = numberOrNull(stat['frameWidth'])
             frameHeight = numberOrNull(stat['frameHeight'])
+            fps = numberOrNull(stat['framesPerSecond'])
+          }
+          {
+            const jitter = numberOrNull(stat['jitter'])
+            if (jitter !== null) jitterMs = Math.max(jitterMs ?? 0, Math.round(jitter * 1000))
           }
           break
 
@@ -138,6 +161,9 @@ export class StatsCollector {
       kind,
       frameWidth,
       frameHeight,
+      fps,
+      jitterMs,
+      micLevel,
     }
   }
 

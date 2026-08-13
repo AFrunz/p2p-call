@@ -529,6 +529,16 @@ export class CallSession {
 
     connection.addEventListener('track', (event) => {
       this.remoteStream.addTrack(event.track)
+      console.debug(
+        `[p2p] пришла дорожка ${event.track.kind}:` +
+          ` enabled=${event.track.enabled} muted=${event.track.muted} ${event.track.readyState}`,
+      )
+      event.track.addEventListener('mute', () =>
+        console.debug(`[p2p] дорожка ${event.track.kind} замолчала`),
+      )
+      event.track.addEventListener('unmute', () =>
+        console.debug(`[p2p] дорожка ${event.track.kind} заговорила`),
+      )
     })
 
     connection.addEventListener('datachannel', (event) => {
