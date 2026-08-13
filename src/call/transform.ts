@@ -41,6 +41,20 @@ export function attachTransform(
   endpoint: RTCRtpSender | RTCRtpReceiver,
   options: AttachOptions,
 ): boolean {
+  try {
+    return install(worker, endpoint, options)
+  } catch (error) {
+    // Молча провалиться нельзя: неудача здесь означает кадры открытым текстом.
+    console.warn(`[p2p] не удалось навесить шифрование на ${options.kind}/${options.direction}:`, error)
+    return false
+  }
+}
+
+function install(
+  worker: Worker,
+  endpoint: RTCRtpSender | RTCRtpReceiver,
+  options: AttachOptions,
+): boolean {
   const payload = {
     kind: options.kind,
     direction: options.direction,
@@ -90,7 +104,15 @@ export function negotiatedCodec(
   return 'vp8'
 }
 
-/** Навешивает шифрование на все дорожки соединения. */
+/**
+ * Навешивает шифрование на все дорожки соединения.
+ *
+ * Обходим трансиверы, а не отправителей с дорожками: отправитель без дорожки —
+ * это обычное дело в начале звонка (камеру не дали, микрофон включат позже), а
+ * его тип всё равно известен по трансиверу. Раньше такой отправитель оставался
+ * без трансформа, и подставленная позже дорожка уходила открытым текстом —
+ * собеседник видел мусор и снимал шифрование у себя.
+ */
 export function attachAll(
   worker: Worker,
   connection: RTCPeerConnection,
@@ -98,30 +120,24 @@ export function attachAll(
 ): boolean {
   let attached = true
 
-  for (const sender of connection.getSenders()) {
-    const kind = sender.track?.kind
+  for (const transceiver of connection.getTransceivers()) {
+    const kind = transceiver.receiver.track?.kind
     if (kind !== 'audio' && kind !== 'video') continue
 
-    attached =
-      attachTransform(worker, sender, {
-        kind,
-        direction: 'send',
-        codec: negotiatedCodec(sender, kind),
-        keys: keys[kind].send,
-      }) && attached
-  }
+    const endpoints = [
+      { endpoint: transceiver.sender, direction: 'send' as const },
+      { endpoint: transceiver.receiver, direction: 'recv' as const },
+    ]
 
-  for (const receiver of connection.getReceivers()) {
-    const kind = receiver.track?.kind
-    if (kind !== 'audio' && kind !== 'video') continue
-
-    attached =
-      attachTransform(worker, receiver, {
-        kind,
-        direction: 'recv',
-        codec: negotiatedCodec(receiver, kind),
-        keys: keys[kind].recv,
-      }) && attached
+    for (const { endpoint, direction } of endpoints) {
+      attached =
+        attachTransform(worker, endpoint, {
+          kind,
+          direction,
+          codec: negotiatedCodec(endpoint, kind),
+          keys: keys[kind][direction],
+        }) && attached
+    }
   }
 
   return attached
