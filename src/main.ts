@@ -1438,7 +1438,12 @@ function wire(): void {
     forgetSession()
   })
 
-  window.addEventListener('beforeunload', () => session?.hangUp())
+  // Уходим молча: прощание закончило бы разговор для собеседника, а закрытая
+  // по ошибке вкладка — повод подождать, а не расходиться. pagehide вдобавок к
+  // beforeunload: на мобильных браузерах второе срабатывает не всегда.
+  for (const event of ['pagehide', 'beforeunload'] as const) {
+    window.addEventListener(event, () => session?.leaveQuietly())
+  }
 }
 
 // -------------------------------------------------------------------- запуск
