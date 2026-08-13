@@ -75,6 +75,8 @@ let callSeconds = 0
 let sasConfirmed = false
 let toggleIcons = { audio: false, video: false }
 let countdownHandle: ReturnType<typeof setInterval> | null = null
+/** Момент, на который уже заведён отсчёт: повторный запуск сбросил бы кольцо. */
+let countdownUntil: number | null = null
 let timerHandle: ReturnType<typeof setInterval> | null = null
 let toastHandle: ReturnType<typeof setTimeout> | null = null
 
@@ -442,6 +444,7 @@ function renderExchange(view: SessionView): void {
   show('incoming-block', responder ? step === 1 : step === 2)
   show('exchange-next', step === 1)
   show('exchange-done', step === 2)
+  placeNextAfter(responder ? 'incoming-block' : 'outgoing-block')
 
   setText('exchange-done-text', t(responder ? 'exchange.doneIncoming' : 'exchange.doneOutgoing'))
   show('action-show-outgoing', !responder)
@@ -481,6 +484,7 @@ function showJoinStep(): void {
   show('exchange-done', false)
   show('incoming-block', true)
   show('exchange-next', true)
+  placeNextAfter('incoming-block')
 
   el<HTMLTextAreaElement>('incoming-code').placeholder = t('exchange.joinPlaceholder')
   setText('exchange-next-text', t('exchange.nextOutgoing'))
@@ -488,6 +492,17 @@ function showJoinStep(): void {
   swapIcon(el('exchange-foot-icon'), 'clock')
   renderIncoming()
   renderIcons()
+}
+
+/**
+ * Ставит подсказку о следующем шаге под активную карточку.
+ *
+ * Порядок в разметке один, а активная карточка зависит от роли: у входящего по
+ * коду это поле ввода, у создающего — свой код. Без перестановки подсказка
+ * «2 · отправьте ответный код» оказывается над тем, что нужно сделать первым.
+ */
+function placeNextAfter(id: string): void {
+  el(id).insertAdjacentElement('afterend', el('exchange-next'))
 }
 
 /** Начало и конец кода: середину читать всё равно некому. */
@@ -672,7 +687,7 @@ function render(view: SessionView): void {
   const holding = session?.isHoldingCandidates ?? false
   show('answer-sent', holding)
   show('answer-refresh', !holding && view.role === 'responder' && view.outgoingCode !== null)
-  renderCountdown(view.startAt)
+  renderCountdown(view.startAt, view.holdSeconds)
   renderExchange(view)
   // Закончившийся звонок ссылку больше не отдаёт: иначе очистка на выходе
   // тут же откатывается очередной перерисовкой умирающей сессии.
@@ -822,6 +837,7 @@ function forgetSession(): void {
   session = null
   lastPhase = null
   lastCopied = false
+  countdownUntil = null
 
   inviteLink = ''
   el<HTMLInputElement>('invite-link').value = ''
@@ -1001,15 +1017,20 @@ function clock(seconds: number): string {
  * взгляда на заполненность хватает, чтобы решить, успевает он отправить код
  * или пора обновлять.
  */
-function renderCountdown(startAt: number | null): void {
+function renderCountdown(startAt: number | null, holdSeconds: number): void {
+  // Перерисовки приходят часто — от статистики звонка до смены состояния
+  // кнопок. Перезапуск таймера на каждой из них сбрасывал бы кольцо.
+  if (startAt === countdownUntil) return
+  countdownUntil = startAt
+
   if (countdownHandle !== null) clearInterval(countdownHandle)
   countdownHandle = null
 
   if (startAt === null) return
 
-  // Полная длительность известна только в начале: дальше считаем от неё, иначе
-  // кольцо после перерисовки прыгнет на полный круг.
-  const total = Math.max(1, Math.round((startAt - Date.now()) / 1000))
+  // Полная шкала — заданное окно на перенос кода, а не остаток на момент
+  // первой отрисовки: иначе кольцо каждый раз начинается заново от текущего.
+  const total = Math.max(1, holdSeconds)
 
   const tick = () => {
     const left = Math.max(0, Math.round((startAt - Date.now()) / 1000))

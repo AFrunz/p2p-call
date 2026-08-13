@@ -127,6 +127,8 @@ export interface SessionView {
   encryptionReason: EncryptionReason
   network: NetworkReport | null
   /** Когда начнётся проверка пар. null — расписание не назначено. */
+  /** Сколько всего секунд даётся на перенос кода — полная шкала отсчёта. */
+  holdSeconds: number
   startAt: number | null
   /** Состояние ICE: видно в строке ожидания и в консольном журнале. */
   iceState: RTCIceConnectionState | null
@@ -216,6 +218,7 @@ export class CallSession {
     frameEncryption: false,
     encryptionReason: 'pending',
     network: null,
+    holdSeconds: DEFAULT_HOLD_SECONDS,
     startAt: null,
     iceState: null,
     stats: null,
@@ -761,6 +764,7 @@ export class CallSession {
    * человек нёс код дольше расписания: тогда начинаем сразу.
    */
   private scheduleRelease(startAt: number): void {
+    this.patch({ holdSeconds: this.holdSeconds })
     if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
 
     const wait = Math.max(0, startAt - Date.now())
