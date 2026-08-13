@@ -1378,15 +1378,23 @@ function start(): void {
   void runDiagnostics()
 
   // Страница открыта по ссылке-приглашению — подключаемся, ничего не спрашивая.
-  if (parseInviteLink(location.href) !== null) {
-    void (async () => {
-      const created = newSession()
-      await created.prepare()
-      await created.joinLink(location.href)
-      // Секрет комнаты не должен остаться в истории браузера.
-      history.replaceState(null, '', location.pathname)
-    })()
-  }
+  void followInviteLink(location.href)
+
+  // Секрет комнаты живёт во фрагменте, а переход на тот же адрес с другим
+  // фрагментом страницу не перезагружает: без этого вторая ссылка, открытая
+  // из уже запущенного приложения, просто ничего не делала бы.
+  window.addEventListener('hashchange', () => void followInviteLink(location.href))
+}
+
+/** Открывает приглашение, если по адресу лежит именно оно. */
+async function followInviteLink(url: string): Promise<void> {
+  if (parseInviteLink(url) === null) return
+
+  const created = newSession()
+  await created.prepare()
+  await created.joinLink(url)
+  // Секрет комнаты не должен остаться в истории браузера.
+  history.replaceState(null, '', location.pathname)
 }
 
 start()
