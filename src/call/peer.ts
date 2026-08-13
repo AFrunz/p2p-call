@@ -27,18 +27,27 @@ export function createConnection(iceServers: RTCIceServer[]): RTCPeerConnection 
 const FRAME_SAFE_VIDEO = ['video/vp8', 'video/rtx', 'video/red', 'video/ulpfec', 'video/flexfec-03']
 
 /**
- * Оставляет для видео только кодеки, разметку которых мы разбираем.
+ * Ставит вперёд видеокодеки, разметку которых мы разбираем.
  *
- * Вызывать обязательно до createOffer и createAnswer — иначе предпочтение уже
- * не попадёт в SDP. Возвращает false, если браузер не даёт выбирать: тогда
- * остаётся надеяться на VP8 по умолчанию.
+ * Именно переупорядочивает, а не вычёркивает остальные. Вычеркнув, можно
+ * остаться без общего кодека с собеседником — и тогда звонок не состоится
+ * вовсе, что заметно хуже, чем разговор без сквозного слоя. Если чужой кодек
+ * всё-таки выиграет, это увидит проверка перед навешиванием шифрования.
+ *
+ * Вызывать обязательно до createOffer и createAnswer — позже предпочтение в
+ * SDP уже не попадёт.
  */
-export function restrictVideoCodecs(connection: RTCPeerConnection): boolean {
-  const capabilities = RTCRtpReceiver.getCapabilities?.('video')
-  const preferred = (capabilities?.codecs ?? []).filter((codec) =>
-    FRAME_SAFE_VIDEO.includes(codec.mimeType.toLowerCase()),
-  )
-  if (preferred.length === 0) return false
+export function preferFrameSafeVideo(connection: RTCPeerConnection): boolean {
+  let codecs: readonly { mimeType: string }[]
+  try {
+    codecs = RTCRtpReceiver.getCapabilities?.('video')?.codecs ?? []
+  } catch {
+    return false
+  }
+
+  const safe = codecs.filter((codec) => FRAME_SAFE_VIDEO.includes(codec.mimeType.toLowerCase()))
+  if (safe.length === 0) return false
+  const ordered = [...safe, ...codecs.filter((codec) => !safe.includes(codec))]
 
   let applied = false
   for (const transceiver of connection.getTransceivers()) {
@@ -46,10 +55,11 @@ export function restrictVideoCodecs(connection: RTCPeerConnection): boolean {
     if (typeof transceiver.setCodecPreferences !== 'function') continue
 
     try {
-      transceiver.setCodecPreferences(preferred)
+      const setPreferences = transceiver.setCodecPreferences as (codecs: unknown) => void
+      setPreferences.call(transceiver, ordered)
       applied = true
     } catch (error) {
-      console.warn('[p2p] не удалось ограничить набор видеокодеков:', error)
+      console.warn('[p2p] не удалось выстроить порядок видеокодеков:', error)
     }
   }
   return applied

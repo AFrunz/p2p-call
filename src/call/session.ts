@@ -40,7 +40,7 @@ import {
 import type { Role } from '../signaling/types.js'
 import type { QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
-import { StatsCollector, createConnection, restrictVideoCodecs, waitForGathering } from './peer.js'
+import { StatsCollector, createConnection, preferFrameSafeVideo, waitForGathering } from './peer.js'
 import type { CallStats } from './peer.js'
 import {
   attachAll,
@@ -565,8 +565,8 @@ export class CallSession {
 
     // До createOffer и createAnswer: позже предпочтение в SDP уже не попадёт.
     if (detectTransformSupport() !== 'none') {
-      const restricted = restrictVideoCodecs(connection)
-      console.debug(`[p2p] видео ограничено разбираемыми кодеками: ${restricted}`)
+      const ordered = preferFrameSafeVideo(connection)
+      console.debug(`[p2p] разбираемые видеокодеки поставлены вперёд: ${ordered}`)
     }
 
     connection.addEventListener('track', (event) => {
@@ -1402,7 +1402,13 @@ class SessionError extends Error {
 }
 
 function describe(error: unknown): Message {
-  return error instanceof SessionError ? message(error.key) : message('session.unknownError')
+  if (error instanceof SessionError) return message(error.key)
+
+  // Название ошибки браузера в тексте — не роскошь: логи второго устройства
+  // человеку обычно недоступны, а «неизвестная ошибка» не лечится ничем.
+  const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  console.debug('[p2p] неожиданная ошибка:', error)
+  return message('session.unexpectedError', { reason })
 }
 
 /** Что удалось узнать про ICE к моменту провала. */
