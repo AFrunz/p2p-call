@@ -162,3 +162,31 @@ export function detachAll(connection: RTCPeerConnection): void {
     if ('transform' in holder) holder['transform'] = null
   }
 }
+
+/** Порог, после которого испорченные кадры перестают быть случайностью. */
+export const PLAINTEXT_THRESHOLD = 100
+
+export interface DowngradeEvidence {
+  /** Что собеседник ответил про свой слой. null — ещё не отвечал. */
+  peerReportedAttached: boolean | null
+  /** Сколько его кадров мы расшифровали. */
+  decrypted: number
+  /** Сколько кадров оказались короче нашей же обвязки. */
+  plaintext: number
+}
+
+/**
+ * Стоит ли снимать шифрование кадров.
+ *
+ * Слово собеседника весит больше счётчиков. Сказал, что не навесил, — снимаем
+ * сразу. Сказал, что навесил, — не снимаем никогда, чем бы ни выглядели его
+ * кадры: короткие пакеты шлёт и включённый слой, когда микрофон выключен, а
+ * одностороннее снятие ломает ровно то, что чинило. Счётчики остаются запасным
+ * доводом на случай собеседника, который о себе не сообщает.
+ */
+export function shouldDowngrade(evidence: DowngradeEvidence): boolean {
+  if (evidence.peerReportedAttached === true) return false
+  if (evidence.peerReportedAttached === false) return true
+
+  return evidence.decrypted === 0 && evidence.plaintext >= PLAINTEXT_THRESHOLD
+}

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { attachAll, detachAll } from '../../src/call/transform.js'
+import { PLAINTEXT_THRESHOLD, attachAll, detachAll, shouldDowngrade } from '../../src/call/transform.js'
 import type { MediaKeys } from '../../src/crypto/kdf.js'
 
 /** Ключи здесь не используются по назначению — важно лишь, что они различимы. */
@@ -129,5 +129,53 @@ describe('detachAll', () => {
 
     expect(audio.sender.transform).toBeNull()
     expect(audio.receiver.transform).toBeNull()
+  })
+})
+
+describe('shouldDowngrade', () => {
+  it('верит слову собеседника, а не счётчику испорченных кадров', () => {
+    // Так выглядит собеседник с выключенным микрофоном: короткие пакеты идут
+    // мимо шифрования, хотя слой у него включён.
+    expect(
+      shouldDowngrade({
+        peerReportedAttached: true,
+        decrypted: 0,
+        plaintext: PLAINTEXT_THRESHOLD * 10,
+      }),
+    ).toBe(false)
+  })
+
+  it('снимает сразу, если собеседник сказал, что не навесил', () => {
+    expect(shouldDowngrade({ peerReportedAttached: false, decrypted: 0, plaintext: 0 })).toBe(true)
+  })
+
+  it('пока собеседник молчит, опирается на счётчик', () => {
+    expect(
+      shouldDowngrade({
+        peerReportedAttached: null,
+        decrypted: 0,
+        plaintext: PLAINTEXT_THRESHOLD,
+      }),
+    ).toBe(true)
+  })
+
+  it('не снимает из-за отдельных испорченных кадров', () => {
+    expect(
+      shouldDowngrade({
+        peerReportedAttached: null,
+        decrypted: 0,
+        plaintext: PLAINTEXT_THRESHOLD - 1,
+      }),
+    ).toBe(false)
+  })
+
+  it('не снимает, пока хоть что-то расшифровывается', () => {
+    expect(
+      shouldDowngrade({
+        peerReportedAttached: null,
+        decrypted: 1,
+        plaintext: PLAINTEXT_THRESHOLD * 10,
+      }),
+    ).toBe(false)
   })
 })

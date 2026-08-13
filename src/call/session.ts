@@ -48,6 +48,7 @@ import {
   detachAll,
   detectTransformSupport,
   negotiatedCodec,
+  shouldDowngrade,
 } from './transform.js'
 
 /**
@@ -69,9 +70,6 @@ const MAX_ANSWER_REFRESH = 3
  * этом и держится ожидание, пока человек несёт код.
  */
 const KEEP_ALIVE_INTERVAL_MS = 4000
-
-/** Сколько заведомо чужих кадров подряд считаем доказательством, а не помехой. */
-const PLAINTEXT_THRESHOLD = 100
 
 export type Phase =
   | 'idle'
@@ -212,6 +210,8 @@ export class CallSession {
   /** Умеет ли собеседник шифровать кадры. Включаем слой только если оба. */
   private peerFrameEncryption = false
   private encryptionReason: EncryptionReason = 'pending'
+  /** Что собеседник сказал про свой слой шифрования. null — ещё не говорил. */
+  private peerAttachedEncryption: boolean | null = null
   private keys: MediaKeys | null = null
 
   private localStream: MediaStream | null = null
@@ -943,11 +943,14 @@ export class CallSession {
       if (data.id?.endsWith('/recv') !== true) return
       this.sendControl({ t: 'frames', ok: data.ok ?? 0, failed: data.failed ?? 0 })
 
-      // Кадры короче нашего заголовка шифровали не мы: на той стороне слой
-      // выключен, и согласование это не поймало.
-      if ((data.ok ?? 0) === 0 && (data.plaintext ?? 0) >= PLAINTEXT_THRESHOLD) {
-        this.downgradeEncryption()
-      }
+      // Кадры короче нашего заголовка шифровали не мы — если только собеседник
+      // не сказал обратного: его слову верим больше, чем счётчику.
+      const downgrade = shouldDowngrade({
+        peerReportedAttached: this.peerAttachedEncryption,
+        decrypted: data.ok ?? 0,
+        plaintext: data.plaintext ?? 0,
+      })
+      if (downgrade) this.downgradeEncryption()
     })
 
     const attached = attachAll(worker, this.connection, this.keys)
@@ -1087,7 +1090,10 @@ export class CallSession {
         )
         // Прямой ответ надёжнее счёта испорченных кадров: там любой промах по
         // ключу выглядел как открытый текст, и слой снимался напрасно.
-        if (!control.attached) {
+        this.peerAttachedEncryption = control.attached
+        if (
+          shouldDowngrade({ peerReportedAttached: control.attached, decrypted: 0, plaintext: 0 })
+        ) {
           this.downgradeEncryption(control.support === 'none' ? 'peerUnsupported' : 'attachFailed')
         }
       }
@@ -1114,7 +1120,7 @@ export class CallSession {
   private downgradeEncryption(reason: EncryptionReason = 'peerPlaintext'): void {
     if (!this.view.frameEncryption || this.connection === null) return
 
-    console.debug('[p2p] собеседник шлёт кадры открытым текстом — снимаем шифрование кадров')
+    console.debug(`[p2p] снимаем шифрование кадров: ${reason}`)
     detachAll(this.connection)
     this.worker?.terminate()
     this.worker = null
@@ -1125,6 +1131,10 @@ export class CallSession {
       encryptionReason: reason,
       notice: message('session.encryptionDowngraded'),
     })
+
+    // Снятие в одну сторону хуже поломки, которую оно лечит: собеседник
+    // продолжит шифровать, и его кадры пойдут прямо в декодер.
+    this.announceEncryption()
   }
 
   private onPeerFrames(ok: number, failed: number): void {
