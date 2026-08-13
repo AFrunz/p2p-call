@@ -10,6 +10,12 @@ RUN cd server && npm ci --no-audit --no-fund
 
 COPY server/tsconfig.json ./server/
 COPY server/src ./server/src
+
+# Корневой package.json нужен не ради зависимостей, а ради "type": "module":
+# под NodeNext модульную систему файла определяет ближайший сверху package.json.
+# Без него общий src/protocol/signaling.ts считается CommonJS, и сборка падает
+# на каждом export — при том что локально всё собирается.
+COPY package.json ./
 COPY src/protocol/signaling.ts ./src/protocol/
 COPY src/signaling/types.ts ./src/signaling/
 COPY src/bytes.ts ./src/
