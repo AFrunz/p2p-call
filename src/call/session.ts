@@ -45,6 +45,7 @@ import { StatsCollector, createConnection, preferFrameSafeVideo, waitForGatherin
 import type { CallStats } from './peer.js'
 import {
   attachAll,
+  attachTransform,
   configureStreams,
   detachAll,
   detectTransformSupport,
@@ -1441,12 +1442,22 @@ export class CallSession {
       ?.getTransceivers()
       .find((item) => item.receiver.track.kind === track.kind)?.sender
 
-    // Трансформ навешен на отправителя ещё при создании соединения и переживает
-    // подстановку дорожки — доставать его отдельно не нужно.
-    if (sender !== undefined) await sender.replaceTrack(track)
+    const kind = track.kind === 'audio' ? 'audio' : 'video'
+
+    if (sender !== undefined) {
+      await sender.replaceTrack(track)
+
+      // Трансформ навешивается заново после каждой подстановки дорожки.
+      // Навешенный на отправителя без дорожки, он до кодировщика не доходит:
+      // кодировщик запускается вместе с дорожкой и о прежней привязке не знает.
+      // Кадры тогда уходят открытым текстом прямо в расшифровщик собеседника —
+      // видео рассыпается, звук превращается в треск.
+      if (this.worker !== null && this.view.frameEncryption) {
+        attachTransform(this.worker, sender, { kind, direction: 'send' })
+      }
+    }
     this.localStream?.addTrack(track)
 
-    const kind = track.kind === 'audio' ? 'audio' : 'video'
     this.patch({
       canSend: { ...this.view.canSend, [kind]: true },
       muted: { ...this.view.muted, [kind]: !track.enabled },

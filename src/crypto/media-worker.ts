@@ -46,6 +46,12 @@ interface SenderState {
   keys: DirectionKeys
 }
 
+/**
+ * Состояние отправителей переживает пересоздание трансформа.
+ *
+ * Трансформ навешивается заново после каждой подстановки дорожки, а счётчик
+ * кадров сбрасывать нельзя: повтор nonce под одним ключом ломает GCM.
+ */
 const senders = new Map<string, SenderState>()
 const receivers = new Map<string, ReceiverKeys>()
 
