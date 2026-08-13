@@ -275,7 +275,7 @@ export const en: Record<string, string> = {
   'stats.fps': 'fps',
   'call.selfMicOff': 'your microphone is off',
   'stats.mic': 'microphone',
-  'encryption.kinds': "There are two layers here. Transport encryption (DTLS-SRTP) is present in every call and cannot be turned off: it hides the traffic from everyone but your peer, though a relaying server is in principle able to strip it. End-to-end encryption encrypts every frame separately with a key derived on your devices and never sent anywhere — not even our server can read such a call.",
+  'encryption.kinds': 'There are two layers here. Transport encryption (DTLS-SRTP) is present in every call and cannot be turned off. On a direct connection the browsers agree its keys with each other: neither your provider, nor the routers along the way, nor even a TURN relay can read the stream — TURN forwards packets that are already encrypted and never sees the keys. The weak point is not the channel but the code handover: substitute the code in transit and someone sits in the middle. That is exactly what reading the phrase out loud protects against. End-to-end encryption adds a second layer on top: its key is derived from the code and from a shared passphrase, if you set one. With a passphrase, substituting the code gains nothing, and if the stream ever passes through a server that can terminate DTLS, the frames stay closed regardless.',
   'encryption.now': "Right now:",
   'encryption.reason.active': "both layers are working. Read the phrase out loud to each other — it proves the key was derived with your peer and not with someone in between.",
   'encryption.reason.pending': "the layers are still being negotiated.",
