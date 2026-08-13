@@ -4,7 +4,7 @@
  */
 export const en: Record<string, string> = {
   // --- главный экран --------------------------------------------------------
-  'home.title': 'P2P Call',
+  'home.title': 'P2P VideoCall',
   'home.subtitle':
     'The conversation goes directly between two browsers. The keys never leave your devices.',
   'home.settings': 'Settings',
