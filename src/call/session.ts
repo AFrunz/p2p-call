@@ -176,16 +176,6 @@ export interface SessionOptions {
    */
   connectDelay?: number
   /**
-   * Не запрашивать камеру и микрофон при подготовке.
-   *
-   * Разрешение спрашивается там, где человек уже видит звонок: индикатор
-   * камеры, зажёгшийся на главном экране, пугает раньше времени. Дорожки
-   * подставляются позже через attachTrack — трансиверы для этого создаются
-   * заранее, поэтому нового обмена кодами не требуется.
-   */
-  deferCapture?: boolean
-
-  /**
    * Уже захваченный поток.
    *
    * Переданный поток сессия не останавливает — он принадлежит вызывающему коду.
@@ -332,12 +322,7 @@ export class CallSession {
       const existing = this.options.stream ?? null
       let notice: Message | null = null
 
-      if (this.options.deferCapture === true && existing === null) {
-        // Пустой поток: трансиверы всё равно создадутся, а дорожки приедут
-        // позже — когда человек нажмёт микрофон или камеру уже в звонке.
-        this.localStream = new MediaStream()
-        this.ownsStream = true
-      } else if (existing !== null) {
+      if (existing !== null) {
         // Готовый поток приходит редко — например, из ожидания собеседника,
         // где камеру уже включили. Переспрашивать разрешение незачем.
         this.localStream = existing

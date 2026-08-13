@@ -656,9 +656,6 @@ function newSession(): CallSession {
     pageUrl: `${location.origin}${location.pathname}`,
     connectDelay: settings.connectDelay,
     network,
-    // Разрешение на камеру и микрофон спрашиваем уже на экране звонка: индикатор
-    // записи, зажёгшийся на главном экране, пугает раньше времени.
-    deferCapture: true,
     stream: null,
   })
 
@@ -815,28 +812,14 @@ function onPhase(view: SessionView): void {
   }
 }
 
-/**
- * Переводит на экран звонка и только там просит устройства.
- *
- * Камера и микрофон включаются выключенными: войти в разговор молча — это
- * осознанный выбор, а не забытая настройка.
- */
+/** Показывает экран звонка и подтягивает списки устройств и качества. */
 async function enterCall(): Promise<void> {
   screen('screen-call')
   attachStream('waiting-video', session?.media.local ?? null)
   attachStream('local-video', session?.media.local ?? null)
 
-  const stream = session?.media.local
-  if (stream !== null && stream !== undefined && stream.getTracks().length === 0) {
-    for (const kind of ['audio', 'video'] as const) await acquireTrack(kind, stream)
-    attachStream('waiting-video', stream)
-    attachStream('local-video', stream)
-  }
-
   await fillDevices()
   renderQualityPanel()
-  // Перерисовку не зовём: она пришла бы со старым видом, снятым до захвата
-  // дорожек, и погасила бы уже правильные значки. Свежий вид принесёт сессия.
 }
 
 /**
@@ -1202,6 +1185,9 @@ function wire(): void {
   on('action-create-code', 'click', () => {
     void withBusy('action-create-code', 'direct.creating', async () => {
       const created = newSession()
+      // Экран меняем до захвата: индикатор записи, зажёгшийся на главном
+      // экране, пугает раньше времени — человек ещё не начал звонок.
+      screen('screen-exchange')
       await created.prepare()
       status('direct-status', 'direct-status-text', 'status.gathering')
       await created.createCode()
@@ -1307,8 +1293,9 @@ function wire(): void {
   on('action-start-session', 'click', () => {
     void withBusy('action-start-session', 'server.starting', async () => {
       const created = newSession()
-      // Сначала ссылка: она переводит человека в комнату ожидания, и уже там
-      // спрашиваются камера с микрофоном.
+      // Сначала экран звонка, потом захват: разрешение спрашивается там, где
+      // человек уже видит комнату ожидания, а не на главной.
+      screen('screen-call')
       await created.prepare()
       await created.createLink()
     })
