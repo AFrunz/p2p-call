@@ -10,6 +10,9 @@ export interface PresetSpec {
   maxBitrate: number
 }
 
+/** Что просим у камеры в режиме «автоматически»: потолок задаёт уже сеть. */
+const AUTO_CAPTURE: PresetSpec = { width: 1280, height: 720, frameRate: 30, maxBitrate: 0 }
+
 const SPECS: Record<Exclude<QualityPreset, 'auto'>, PresetSpec> = {
   '360p': { width: 640, height: 360, frameRate: 30, maxBitrate: 800_000 },
   '720p': { width: 1280, height: 720, frameRate: 30, maxBitrate: 2_000_000 },
@@ -21,10 +24,17 @@ export function presetSpec(preset: QualityPreset): PresetSpec | null {
   return preset === 'auto' ? null : SPECS[preset]
 }
 
-/** Ограничения для getUserMedia: ideal, не exact — иначе камера без нужного режима откажет. */
+/**
+ * Ограничения для getUserMedia: ideal, не exact — иначе камера без нужного
+ * режима откажет.
+ *
+ * У `auto` тоже есть разрешение, и это принципиально: без подсказки браузер
+ * берёт свой минимум (обычно 640×480), и картинка выглядит плохо независимо от
+ * канала. Просим 720p и даём WebRTC самому опускаться при нехватке полосы —
+ * это и есть «автоматически».
+ */
 export function presetToConstraints(preset: QualityPreset): MediaTrackConstraints {
-  const spec = presetSpec(preset)
-  if (spec === null) return {}
+  const spec = presetSpec(preset) ?? AUTO_CAPTURE
 
   return {
     width: { ideal: spec.width },

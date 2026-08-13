@@ -1037,6 +1037,12 @@ export class CallSession {
       if (control.t === 'mute') {
         this.patch({ peerMuted: { ...this.view.peerMuted, [control.kind]: control.muted } })
       }
+      if (control.t === 'quality') {
+        // Просьбу собеседника выполняем: камера у нас, а смотрит он. Иначе
+        // селектор качества управлял бы тем, чего человек не видит.
+        console.debug(`[p2p] собеседник просит качество ${control.preset}`)
+        void this.applyPeerQuality(control.preset)
+      }
       if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
       if (control.t === 'bye') this.endCall('peer')
     })
@@ -1130,6 +1136,12 @@ export class CallSession {
   /** Текущее состояние своих дорожек — нужно интерфейсу для кнопок. */
   isMuted(kind: 'audio' | 'video'): boolean {
     return this.view.muted[kind]
+  }
+
+  /** Меняет исходящее качество по просьбе собеседника, не трогая свой выбор. */
+  private async applyPeerQuality(quality: QualityPreset): Promise<void> {
+    if (this.connection === null || this.localStream === null) return
+    await applyQuality(this.connection, this.localStream, quality)
   }
 
   async setQuality(quality: QualityPreset): Promise<void> {

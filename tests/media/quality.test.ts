@@ -44,10 +44,13 @@ describe('presetToConstraints', () => {
     expect(JSON.stringify(constraints)).not.toContain('exact')
   })
 
-  it('для авто не навязывает камере разрешение', () => {
+  it('для авто просит достойное разрешение, а не отдаёт выбор браузеру', () => {
+    // Без подсказки браузер берёт свой минимум — обычно 640×480, и картинка
+    // выглядит плохо при любом канале. Опускаться при нехватке полосы WebRTC
+    // умеет сам, а вот поднимать выше захваченного — нет.
     const constraints = presetToConstraints('auto') as Record<string, unknown>
-    expect(constraints['width']).toBeUndefined()
-    expect(constraints['height']).toBeUndefined()
+    expect(constraints['width']).toMatchObject({ ideal: 1280 })
+    expect(constraints['height']).toMatchObject({ ideal: 720 })
   })
 })
 

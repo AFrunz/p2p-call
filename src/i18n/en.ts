@@ -270,4 +270,5 @@ export const en: Record<string, string> = {
   'settings.delaySeconds': '{value} seconds',
   'session.peerCannotDecrypt': 'The other side cannot decrypt our stream: frame encryption did not turn on there. Reload both pages — capabilities are agreed during the code exchange.',
   'session.encryptionDowngraded': 'The other side does not encrypt frames, so the end-to-end layer is off on both sides — otherwise audio and video would not get through. The call stays protected by the WebRTC transport encryption.',
+  'call.qualityHint': 'Quality is requested from the other side and applied to your own camera',
 }
