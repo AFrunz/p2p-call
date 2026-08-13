@@ -21,7 +21,22 @@ export const TAG_BYTES = 16
 export const COUNTER_BYTES = 8
 export const KEY_ID_BYTES = 1
 export const HEADER_SIZE_BYTES = 1
-export const TRAILER_BYTES = COUNTER_BYTES + KEY_ID_BYTES + HEADER_SIZE_BYTES
+export const MAGIC_BYTES = 1
+export const TRAILER_BYTES = COUNTER_BYTES + KEY_ID_BYTES + HEADER_SIZE_BYTES + MAGIC_BYTES
+
+/**
+ * Метка «этот кадр собрали мы».
+ *
+ * Без неё чужой кадр неотличим от своего с неподошедшим ключом: GCM в обоих
+ * случаях говорит одно и то же, а чинить надо разное. Угадывать по разметке
+ * кодека нельзя — открытый заголовок мы и так оставляем нетронутым, поэтому
+ * сигнатура формата стоит на месте и в зашифрованном кадре.
+ *
+ * Метка не аутентифицирована: подделать её ничего не стоит, но она и не для
+ * защиты, а для диагностики. Подделанная приведёт к отказу GCM, то есть ровно
+ * к тому же, что и без неё.
+ */
+export const FRAME_MAGIC = 0x5a
 
 export const NONCE_BYTES = 12
 
@@ -75,18 +90,6 @@ export function unencryptedHeaderSize(codec: Codec, isKeyFrame: boolean): number
  */
 export function isVp8KeyFrame(data: Bytes): boolean {
   return data.length > 0 && (data[0]! & 1) === 0
-}
-
-/**
- * Похож ли кадр на незашифрованный ключевой кадр VP8.
- *
- * У такого кадра на позициях 3–5 стоит сигнатура формата. Если она на месте в
- * кадре, который не расшифровался, значит собеседник его не шифровал — и
- * разбираться надо с его стороной, а не с нашими ключами. Отличить это по
- * ошибке GCM нельзя: она одинакова и для чужого ключа, и для открытого текста.
- */
-export function looksLikePlainVp8(data: Bytes): boolean {
-  return data.length > 5 && data[3] === 0x9d && data[4] === 0x01 && data[5] === 0x2a
 }
 
 /**
@@ -161,8 +164,9 @@ export function packFrame(
 
   const trailer = header.length + ciphertext.length
   new DataView(packed.buffer).setBigUint64(trailer, counter)
-  packed[packed.length - 2] = keyId
-  packed[packed.length - 1] = header.length
+  packed[packed.length - 3] = keyId
+  packed[packed.length - 2] = header.length
+  packed[packed.length - 1] = FRAME_MAGIC
   return packed
 }
 
@@ -185,7 +189,11 @@ export function unpackFrame(data: Bytes): UnpackedFrame {
     )
   }
 
-  const headerSize = data[data.length - 1]!
+  if (data[data.length - 1] !== FRAME_MAGIC) {
+    throw new FrameFormatError('кадр не проходил через наше шифрование: нет метки')
+  }
+
+  const headerSize = data[data.length - 2]!
   if (headerSize + TAG_BYTES + TRAILER_BYTES > data.length) {
     throw new FrameFormatError(
       `заявленный заголовок не помещается в кадр: ${headerSize} из ${data.length}`,
@@ -199,7 +207,7 @@ export function unpackFrame(data: Bytes): UnpackedFrame {
     header: data.subarray(0, headerSize),
     ciphertext: data.subarray(headerSize, trailer),
     counter: view.getBigUint64(trailer),
-    keyId: data[data.length - 2]!,
+    keyId: data[data.length - 3]!,
   }
 }
 

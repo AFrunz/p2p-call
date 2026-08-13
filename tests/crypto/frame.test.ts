@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FRAME_MAGIC,
   FrameFormatError,
   headerSizeFor,
   isVp8KeyFrame,
-  looksLikePlainVp8,
   NONCE_BYTES,
   TAG_BYTES,
   TRAILER_BYTES,
@@ -233,20 +233,28 @@ describe('packFrame / unpackFrame', () => {
     expect(headerSizeFor(bytes(40), 'opus', false)).toBe(1)
   })
 
-  it('узнаёт незашифрованный ключевой кадр VP8 по сигнатуре формата', () => {
-    // Ошибка GCM одинакова для чужого ключа и для открытого текста, а чинить
-    // их надо в разных местах.
-    const plain = bytes(40)
-    plain.set([0x9d, 0x01, 0x2a], 3)
-    expect(looksLikePlainVp8(plain)).toBe(true)
+
+
+
+  it('метит свои кадры: чужой иначе неотличим от своего с неподошедшим ключом', () => {
+    const packed = packFrame(bytes(10, 3), bytes(60, 9), 1n, 0)
+    expect(packed[packed.length - 1]).toBe(FRAME_MAGIC)
   })
 
-  it('не принимает зашифрованный кадр за открытый', () => {
-    const encrypted = packFrame(bytes(10, 3), bytes(60, 9), 1n, 0)
-    expect(looksLikePlainVp8(encrypted)).toBe(false)
+  it('отвергает кадр без метки, не пытаясь его расшифровать', () => {
+    // Открытый заголовок мы не трогаем, поэтому сигнатура кодека стоит на месте
+    // и в зашифрованном кадре — по ней своё от чужого не отличить.
+    const foreign = bytes(60, 4)
+    expect(() => unpackFrame(foreign)).toThrow(FrameFormatError)
   })
 
-  it('не читает за границей короткого кадра', () => {
-    expect(looksLikePlainVp8(bytes(3))).toBe(false)
+  it('называет отсутствие метки доводом в пользу открытого текста', () => {
+    const foreign = bytes(60, 4)
+    try {
+      unpackFrame(foreign)
+      expect.unreachable()
+    } catch (error) {
+      expect((error as FrameFormatError).plaintext).toBe(true)
+    }
   })
 })

@@ -161,20 +161,30 @@ describe('detachAll', () => {
 })
 
 describe('shouldDowngrade', () => {
-  it('верит слову собеседника, а не счётчику испорченных кадров', () => {
-    // Так выглядит собеседник с выключенным микрофоном: короткие пакеты идут
-    // мимо шифрования, хотя слой у него включён.
+  it('верит уликам, а не заявлению собеседника', () => {
+    // Кадр без нашей метки через наше шифрование не проходил. Собеседник может
+    // считать, что слой навешен, и ошибаться — звонок от этого не починится.
     expect(
       shouldDowngrade({
         peerReportedAttached: true,
         decrypted: 0,
         plaintext: PLAINTEXT_THRESHOLD * 10,
       }),
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('снимает сразу, если собеседник сказал, что не навесил', () => {
     expect(shouldDowngrade({ peerReportedAttached: false, decrypted: 0, plaintext: 0 })).toBe(true)
+  })
+
+  it('один расшифрованный кадр отменяет снятие: поток читается', () => {
+    expect(
+      shouldDowngrade({
+        peerReportedAttached: false,
+        decrypted: 1,
+        plaintext: PLAINTEXT_THRESHOLD * 10,
+      }),
+    ).toBe(false)
   })
 
   it('пока собеседник молчит, опирается на счётчик', () => {

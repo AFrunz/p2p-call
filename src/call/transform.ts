@@ -193,15 +193,17 @@ export interface DowngradeEvidence {
 /**
  * Стоит ли снимать шифрование кадров.
  *
- * Слово собеседника весит больше счётчиков. Сказал, что не навесил, — снимаем
- * сразу. Сказал, что навесил, — не снимаем никогда, чем бы ни выглядели его
- * кадры: короткие пакеты шлёт и включённый слой, когда микрофон выключен, а
- * одностороннее снятие ломает ровно то, что чинило. Счётчики остаются запасным
- * доводом на случай собеседника, который о себе не сообщает.
+ * Кадр без нашей метки через наше шифрование не проходил — это факт, а не
+ * догадка по длине или разметке кодека. Поэтому улика перевешивает заявление:
+ * собеседник может считать, что слой навешен, и ошибаться. Раньше его слову
+ * верили безоговорочно, и звонок оставался сломанным при бодром отчёте с той
+ * стороны.
+ *
+ * Один расшифрованный кадр отменяет всё: раз поток читается, снимать нечего.
  */
 export function shouldDowngrade(evidence: DowngradeEvidence): boolean {
-  if (evidence.peerReportedAttached === true) return false
-  if (evidence.peerReportedAttached === false) return true
+  if (evidence.decrypted > 0) return false
+  if (evidence.plaintext >= PLAINTEXT_THRESHOLD) return true
 
-  return evidence.decrypted === 0 && evidence.plaintext >= PLAINTEXT_THRESHOLD
+  return evidence.peerReportedAttached === false
 }
