@@ -383,4 +383,30 @@ describe('сообщения модуля', () => {
     expect(media.stream.getVideoTracks()).toHaveLength(1)
     expect(media.stream.getAudioTracks()).toHaveLength(0)
   })
+
+  it('никогда не держит два запроса разрешения одновременно', async () => {
+    // Браузер показывает запросы по одному, и второй вызов может не
+    // завершиться никогда. На свежем профиле это выглядит как навсегда
+    // зависшее «запрашиваем доступ».
+    let running = 0
+    let peak = 0
+    const base = provider({ available: ['audio'] })
+    const serialized: MediaProvider = {
+      ...base,
+      async getUserMedia(constraints) {
+        running++
+        peak = Math.max(peak, running)
+        try {
+          await Promise.resolve()
+          return await base.getUserMedia(constraints)
+        } finally {
+          running--
+        }
+      },
+    }
+
+    await requestMedia({ preset: 'auto' }, serialized)
+
+    expect(peak).toBe(1)
+  })
 })

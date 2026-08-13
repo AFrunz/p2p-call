@@ -150,12 +150,18 @@ export async function requestMedia(
 
   // Пробуем по отдельности: возможно, доступен только один вид устройств.
   const relaxed = hasSavedDevice ? { preset: request.preset } : request
+  // Строго по очереди. Два одновременных getUserMedia — это два одновременных
+  // запроса разрешения: браузер показывает их по одному, и второй вызов может
+  // не завершиться никогда. Заметно это только на свежем профиле, когда
+  // разрешения ещё не выданы, — то есть ровно у нового пользователя.
   const wantsVideo = videoConstraints(relaxed) !== false
   const wantsAudio = audioConstraints(relaxed) !== false
-  const [videoStream, audioStream] = await Promise.all([
-    wantsVideo ? attempt(provider, { video: videoConstraints(relaxed), audio: false }) : null,
-    wantsAudio ? attempt(provider, { video: false, audio: audioConstraints(relaxed) }) : null,
-  ])
+  const videoStream = wantsVideo
+    ? await attempt(provider, { video: videoConstraints(relaxed), audio: false })
+    : null
+  const audioStream = wantsAudio
+    ? await attempt(provider, { video: false, audio: audioConstraints(relaxed) })
+    : null
 
   if (videoStream === null && audioStream === null) {
     return {

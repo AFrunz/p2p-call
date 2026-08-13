@@ -51,6 +51,14 @@ let locale: Locale = settings.locale ?? detectLocale(navigator.languages)
 let t = createTranslator(locale)
 
 let session: CallSession | null = null
+/**
+ * Подсказка под превью — ключами, а не готовым текстом.
+ *
+ * Узел переводится и статически, и кодом. Пока состояние жило прямо в DOM,
+ * любая перерисовка переводов возвращала «запрашиваем доступ» поверх давно
+ * полученного разрешения.
+ */
+let previewHint: { key: string } | { parts: Message[] } = { key: 'preview.requesting' }
 let unsubscribe: (() => void) | null = null
 let previewStream: MediaStream | null = null
 let network: NetworkReport | null = null
@@ -105,6 +113,7 @@ function setLocale(next: Locale): void {
   renderChecks()
   renderServerPanel()
   renderPassphrase()
+  renderPreviewHint()
   renderIcons()
 }
 
@@ -207,7 +216,7 @@ async function startPreview(): Promise<void> {
 
   attachStream('preview-video', previewStream)
   renderPreviewState()
-  setText('preview-hint', t('preview.off'))
+  setPreviewHint({ key: 'preview.off' })
 
   if (media.ignoredSavedDevice) {
     settings = { ...settings, cameraId: null, microphoneId: null }
@@ -219,9 +228,8 @@ async function startPreview(): Promise<void> {
   // отделяет отсутствие железа от невыданного разрешения.
   const explanation = [media.problem?.text ?? describeMissing(media.missing), media.problem?.details]
     .filter((part): part is Message => part != null)
-    .map(tm)
 
-  if (explanation.length > 0) setText('preview-hint', explanation.join(' '))
+  if (explanation.length > 0) setPreviewHint({ parts: explanation })
 
   await fillDevices()
   syncAvailability()
@@ -243,8 +251,20 @@ function releaseMedia(): void {
   renderToggleIcons(false, false)
   setPressed('toggle-mic', false)
   setPressed('toggle-cam', false)
-  setText('preview-hint', t('preview.off'))
+  setPreviewHint({ key: 'preview.off' })
   show('preview-off', true)
+}
+
+function setPreviewHint(hint: typeof previewHint): void {
+  previewHint = hint
+  renderPreviewHint()
+}
+
+function renderPreviewHint(): void {
+  setText(
+    'preview-hint',
+    'key' in previewHint ? t(previewHint.key) : previewHint.parts.map(tm).join(' '),
+  )
 }
 
 function renderPreviewState(): void {
