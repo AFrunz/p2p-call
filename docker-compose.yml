@@ -60,6 +60,10 @@ services:
       - --listening-port=${TURN_PORT:-3478}
       - --min-port=${TURN_MIN_PORT:-49160}
       - --max-port=${TURN_MAX_PORT:-49200}
+      # Облачная машина обычно видит только приватный адрес, а публичный висит
+      # на 1:1 NAT снаружи. Без этой пары coturn честно раздаёт собеседникам
+      # свой внутренний адрес — и ретранслятор оказывается недостижим.
+      - --external-ip=${TURN_EXTERNAL_IP:?заполните TURN_EXTERNAL_IP в .env}
       - --no-cli
       - --no-multicast-peers
       - --fingerprint

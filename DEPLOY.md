@@ -17,7 +17,8 @@
 ## Что нужно заранее
 
 - Машина с публичным IP и Linux (`network_mode: host` у coturn на macOS/Windows не работает).
-- Домен, у которого A- или AAAA-запись указывает на эту машину.
+- Если машина облачная и видит только приватный адрес (GCP, AWS, Yandex Cloud), понадобится пара адресов для `TURN_EXTERNAL_IP` — иначе TURN раздаст собеседникам внутренний адрес. Посмотреть свой приватный: `ip -4 addr show scope global | grep inet`.
+- Домен, у которого A- или AAAA-запись указывает на эту машину. Если домена нет, подойдёт `<ваш-ip>.sslip.io` — эта служба резолвит адрес прямо из имени, и Let's Encrypt выдаёт на него сертификат.
 - Открытые порты: `80/tcp`, `443/tcp`, `3478/tcp+udp`, `49160-49200/udp`.
 - Docker с плагином compose.
 
@@ -27,7 +28,7 @@
 git clone <репозиторий> && cd p2p-call
 cp .env.example .env
 
-# заполните DOMAIN, ACME_EMAIL и сгенерируйте секрет:
+# заполните DOMAIN, ACME_EMAIL, TURN_EXTERNAL_IP и сгенерируйте секрет:
 openssl rand -hex 32
 
 docker compose up -d
