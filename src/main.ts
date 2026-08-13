@@ -487,6 +487,27 @@ function renderExchange(view: SessionView): void {
 }
 
 /**
+ * Пустой экран на время сборки кода.
+ *
+ * Между переходом на экран и готовым кодом проходят секунды: захват камеры,
+ * сбор кандидатов. Без явного ожидания человек видит пустоту и решает, что
+ * приложение сломалось.
+ */
+function showExchangePreparing(): void {
+  setText('exchange-title', t('exchange.title'))
+  setText('exchange-step-label', t('exchange.step', { current: 1, total: 2 }))
+  el('progress-2').classList.remove('is-done')
+
+  for (const id of ['outgoing-block', 'incoming-block', 'exchange-done', 'exchange-next', 'waiting-block', 'outgoing-code']) {
+    show(id, false)
+  }
+  setText('exchange-foot-text', t('exchange.footNoRush'))
+  swapIcon(el('exchange-foot-icon'), 'info')
+
+  status('exchange-status', 'exchange-status-text', 'status.preparing')
+}
+
+/**
  * Первый шаг для того, кто входит по чужому коду.
  *
  * Сессии здесь ещё нет, а значит и перерисовки по её событиям — экран надо
@@ -1209,10 +1230,12 @@ function wire(): void {
       // Экран меняем до захвата: индикатор записи, зажёгшийся на главном
       // экране, пугает раньше времени — человек ещё не начал звонок.
       screen('screen-exchange')
+      showExchangePreparing()
+
       await created.prepare()
-      status('direct-status', 'direct-status-text', 'status.gathering')
+      status('exchange-status', 'exchange-status-text', 'status.gathering')
       await created.createCode()
-      status('direct-status', 'direct-status-text', null)
+      status('exchange-status', 'exchange-status-text', null)
     })
   })
 
