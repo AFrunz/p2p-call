@@ -19,6 +19,7 @@ export type ControlMessage =
   | { t: 'frames'; ok: number; failed: number }
   | { t: 'encryption'; attached: boolean; support: TransformSupportName }
   | { t: 'keyCheck'; audio: string; video: string }
+  | { t: 'encrypted'; audio: number; video: number }
   | { t: 'bye' }
 
 export function encodeMessage(message: ControlMessage): string {
@@ -82,6 +83,12 @@ export function decodeMessage(raw: string): ControlMessage | null {
       const video = source['video']
       if (!isCheck(audio) || !isCheck(video)) return null
       return { t: 'keyCheck', audio, video }
+    }
+    case 'encrypted': {
+      const audio = source['audio']
+      const video = source['video']
+      if (!isCount(audio) || !isCount(video)) return null
+      return { t: 'encrypted', audio, video }
     }
     case 'bye':
       return { t: 'bye' }

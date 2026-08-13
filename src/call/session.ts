@@ -225,6 +225,8 @@ export class CallSession {
   private peerFailedFrames: number | null = null
   /** Потоки, по которым ещё не пришло подтверждение от воркера. */
   private awaitedStreams = new Set<string>()
+  /** Сколько кадров мы зашифровали на отправку — сообщаем собеседнику. */
+  private encryptedFrames = { audio: 0, video: 0 }
   private confirmTimer: ReturnType<typeof setTimeout> | null = null
   private peerFramesWarned = false
   /**
@@ -977,6 +979,15 @@ export class CallSession {
       }
       if (data.t !== 'stats') return
 
+      // Сколько кадров собеседник реально зашифровал — единственный способ
+      // отличить «слой не навесился» от «навесился, но кадры идут мимо него».
+      // Своих счётчиков он не видит: до его консоли обычно не добраться.
+      if (data.id === 'audio/send') this.encryptedFrames.audio = data.ok ?? 0
+      if (data.id === 'video/send') this.encryptedFrames.video = data.ok ?? 0
+      if (data.id?.endsWith('/send') === true) {
+        this.sendControl({ t: 'encrypted', ...this.encryptedFrames })
+      }
+
       console.debug(
         `[p2p] кадры ${data.id}: обработано ${data.ok}, отброшено ${data.failed}` +
           (data.reason === undefined ? '' : ` — ${data.reason}`),
@@ -1175,6 +1186,11 @@ export class CallSession {
         ) {
           this.downgradeEncryption(control.support === 'none' ? 'peerUnsupported' : 'attachFailed')
         }
+      }
+      if (control.t === 'encrypted') {
+        console.debug(
+          `[p2p] собеседник зашифровал кадров: аудио ${control.audio}, видео ${control.video}`,
+        )
       }
       if (control.t === 'keyCheck') void this.compareKeys(control.audio, control.video)
       if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
