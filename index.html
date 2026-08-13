@@ -237,6 +237,10 @@
         <button class="row__action" id="action-show-outgoing" data-i18n="exchange.show">показать</button>
       </div>
 
+      <!-- Поле со своим кодом живёт вне карточки: его открывают уже на втором
+           шаге, когда сама карточка спрятана. -->
+      <textarea id="outgoing-code" class="code" readonly rows="6" hidden></textarea>
+
       <!-- ---------- Свой код ---------- -->
       <section class="card card--active" id="outgoing-block">
         <div class="card__head">
@@ -259,7 +263,6 @@
           <i data-lucide="copy"></i><span data-i18n="exchange.copy">Скопировать код</span>
         </button>
 
-        <textarea id="outgoing-code" class="code" readonly rows="6" hidden></textarea>
 
 
       </section>

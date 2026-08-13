@@ -54,6 +54,8 @@ let session: CallSession | null = null
 let stepsKind: 'direct' | 'server' = 'direct'
 /** Свой код уже скопирован: по этому переходим ко второму шагу мастера. */
 let lastCopied = false
+/** Последний вид сессии: нужен, чтобы перерисовать мастер, не дожидаясь события. */
+let lastView: SessionView | null = null
 /** Слой шифрования в прошлой перерисовке — по нему ловим переключение. */
 let lastFrameEncryption: boolean | null = null
 
@@ -443,6 +445,12 @@ function renderExchange(view: SessionView): void {
   setText('exchange-step-label', t('exchange.step', { current: step, total: 2 }))
   el('progress-2').classList.toggle('is-done', step === 2)
 
+  // Открытое поле принадлежит прошлому шагу: на новом оно только мешает.
+  if (counting) {
+    show('outgoing-code', false)
+    setText('action-show-outgoing', t('exchange.show'))
+  }
+
   show('waiting-block', counting)
   show('outgoing-block', !counting && hasOutgoing && (responder ? step === 2 : step === 1))
   show('incoming-block', !counting && (responder ? step === 1 : step === 2))
@@ -663,6 +671,7 @@ function newSession(): CallSession {
 }
 
 function render(view: SessionView): void {
+  lastView = view
   // Сравниваем по ключу: объект каждый раз новый, а повторять один и тот же
   // тост при каждой перерисовке незачем.
   if (view.notice !== null && view.notice.key !== lastNotice) {
@@ -841,6 +850,7 @@ function forgetSession(): void {
   session = null
   lastPhase = null
   lastCopied = false
+  lastView = null
   countdownUntil = null
 
   inviteLink = ''
@@ -1219,6 +1229,7 @@ function wire(): void {
     const box = el<HTMLTextAreaElement>('outgoing-code')
     const opening = box.hidden
     show('outgoing-code', opening)
+    box.value = lastView?.outgoingCode ?? box.value
     setText('action-show-outgoing', t(opening ? 'exchange.hide' : 'exchange.show'))
     if (opening) box.select()
   })
@@ -1284,7 +1295,10 @@ function wire(): void {
   on('incoming-code', 'input', renderIncoming)
 
   on('action-copy-code', 'click', () => {
+    // Шаг меняется сразу: ждать очередного события сессии значит показать поле
+    // для чужого кода с задержкой в секунду.
     lastCopied = true
+    if (lastView !== null) renderExchange(lastView)
     void copy(el<HTMLTextAreaElement>('outgoing-code').value, 'toast.codeCopied')
   })
 
