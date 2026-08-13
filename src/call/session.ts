@@ -1,7 +1,7 @@
 import type { Bytes } from '../bytes.js'
 import { message } from '../i18n/message.js'
 import type { Message } from '../i18n/message.js'
-import { RATCHET_INTERVAL_MS } from '../crypto/kdf.js'
+import { RATCHET_INTERVAL_MS, keyCheck } from '../crypto/kdf.js'
 import {
   deriveMediaKeys,
   deriveSharedSecret,
@@ -906,8 +906,10 @@ export class CallSession {
     const sas = await deriveSas(secret, localFingerprint, remoteFingerprint)
     const frameEncryption = this.startTransforms()
 
+    console.debug(`[p2p] ключи выведены: роль ${role}`)
     this.patch({ sas, frameEncryption, encryptionReason: this.encryptionReason })
     this.announceEncryption()
+    void this.announceKeyCheck()
   }
 
   private startTransforms(): boolean {
@@ -1081,6 +1083,7 @@ export class CallSession {
         this.sendControl({ t: 'mute', kind, muted: this.view.muted[kind] })
       }
       this.announceEncryption()
+      void this.announceKeyCheck()
     })
 
     channel.addEventListener('message', (event) => {
@@ -1112,6 +1115,7 @@ export class CallSession {
           this.downgradeEncryption(control.support === 'none' ? 'peerUnsupported' : 'attachFailed')
         }
       }
+      if (control.t === 'keyCheck') void this.compareKeys(control.audio, control.video)
       if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
       if (control.t === 'bye') this.endCall('peer')
     })
@@ -1172,6 +1176,47 @@ export class CallSession {
       attached: this.view.frameEncryption,
       support: detectTransformSupport(),
     })
+  }
+
+  /**
+   * Отдаёт контрольные суммы ключей, которыми мы шифруем.
+   *
+   * Собеседник сверит их со своими ключами приёма: сойтись они обязаны, а если
+   * не сошлись — это расхождение ключей, и назвать его надо так, а не оставлять
+   * в виде OperationError на каждом кадре.
+   */
+  private async announceKeyCheck(): Promise<void> {
+    if (this.keys === null) return
+
+    this.sendControl({
+      t: 'keyCheck',
+      audio: await keyCheck(this.keys.audio.send),
+      video: await keyCheck(this.keys.video.send),
+    })
+  }
+
+  private async compareKeys(audio: string, video: string): Promise<void> {
+    if (this.keys === null) return
+
+    const mine = {
+      audio: await keyCheck(this.keys.audio.recv),
+      video: await keyCheck(this.keys.video.recv),
+    }
+    const mismatched = (['audio', 'video'] as const).filter((kind) => {
+      const theirs = kind === 'audio' ? audio : video
+      return mine[kind] !== theirs
+    })
+
+    if (mismatched.length === 0) {
+      console.debug('[p2p] ключи сошлись')
+      return
+    }
+
+    console.debug(
+      `[p2p] ключи разошлись (${mismatched.join(', ')}): у нас ${mine.audio}/${mine.video},` +
+        ` у собеседника ${audio}/${video}`,
+    )
+    this.patch({ notice: message('session.keyMismatch') })
   }
 
   private sendControl(control: ControlMessage): void {

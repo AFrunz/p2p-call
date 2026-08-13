@@ -6,19 +6,28 @@ export type Codec = 'opus' | 'vp8' | 'vp9' | 'h264' | 'av1'
 export const TAG_BYTES = 16
 
 /**
- * Трейлер: 8 байт счётчика кадров + 1 байт идентификатора ключа.
+ * Трейлер: 8 байт счётчика + 1 байт поколения ключа + 1 байт длины заголовка.
  *
  * Счётчик едет вместе с кадром, потому что приёмнику больше неоткуда взять
  * nonce: порядок кадров он не контролирует, а выводить счётчик из порядка
  * получения нельзя — при потере пакета расшифровка развалится навсегда.
+ *
+ * Длина заголовка едет по той же причине. Раньше приёмник вычислял её сам, по
+ * кодеку и признаку ключевого кадра, — а это догадка: кодек на приёме не всегда
+ * известен, признак ключевого кадра есть не в каждом браузере. Разойдясь с
+ * отправителем хоть на байт, приёмник строит другой additionalData, и GCM
+ * отвергает вообще всё, не объясняя причины.
  */
 export const COUNTER_BYTES = 8
 export const KEY_ID_BYTES = 1
-export const TRAILER_BYTES = COUNTER_BYTES + KEY_ID_BYTES
+export const HEADER_SIZE_BYTES = 1
+export const TRAILER_BYTES = COUNTER_BYTES + KEY_ID_BYTES + HEADER_SIZE_BYTES
 
 export const NONCE_BYTES = 12
 
 const MAX_STREAM_ID = 0xffffffff
+/** Длина открытого заголовка едет в одном байте. */
+const MAX_HEADER_BYTES = 255
 const MAX_COUNTER = 2n ** 64n - 1n
 
 /** Открытый заголовок видео: у ключевого кадра дескриптор длиннее. */
@@ -93,7 +102,7 @@ export function splitFrame(data: Bytes, codec: Codec, isKeyFrame: boolean): Spli
   }
 }
 
-/** Собирает кадр для передачи: header || ciphertext+tag || counter || keyId. */
+/** Собирает кадр: header || ciphertext+tag || counter || keyId || headerSize. */
 export function packFrame(
   header: Bytes,
   ciphertext: Bytes,
@@ -102,6 +111,9 @@ export function packFrame(
 ): Bytes {
   assertKeyId(keyId)
   assertCounter(counter)
+  if (header.length > MAX_HEADER_BYTES) {
+    throw new FrameFormatError(`заголовок не влезает в байт длины: ${header.length}`)
+  }
 
   const packed = new Uint8Array(header.length + ciphertext.length + TRAILER_BYTES)
   packed.set(header, 0)
@@ -109,7 +121,8 @@ export function packFrame(
 
   const trailer = header.length + ciphertext.length
   new DataView(packed.buffer).setBigUint64(trailer, counter)
-  packed[packed.length - 1] = keyId
+  packed[packed.length - 2] = keyId
+  packed[packed.length - 1] = header.length
   return packed
 }
 
@@ -124,13 +137,18 @@ export interface UnpackedFrame {
  * Разбирает принятый кадр. Кидает FrameFormatError, если кадр короче минимума —
  * данные приходят от собеседника, доверять их длине нельзя.
  */
-export function unpackFrame(data: Bytes, codec: Codec, isKeyFrame: boolean): UnpackedFrame {
-  const headerSize = unencryptedHeaderSize(codec, isKeyFrame)
-  const minimum = headerSize + TAG_BYTES + TRAILER_BYTES
-
+export function unpackFrame(data: Bytes): UnpackedFrame {
+  const minimum = TAG_BYTES + TRAILER_BYTES
   if (data.length < minimum) {
     throw new FrameFormatError(
-      `кадр слишком короткий: ${data.length}, минимум ${minimum} (заголовок + тег + трейлер)`,
+      `кадр слишком короткий: ${data.length}, минимум ${minimum} (тег + трейлер)`,
+    )
+  }
+
+  const headerSize = data[data.length - 1]!
+  if (headerSize + TAG_BYTES + TRAILER_BYTES > data.length) {
+    throw new FrameFormatError(
+      `заявленный заголовок не помещается в кадр: ${headerSize} из ${data.length}`,
     )
   }
 
@@ -141,7 +159,7 @@ export function unpackFrame(data: Bytes, codec: Codec, isKeyFrame: boolean): Unp
     header: data.subarray(0, headerSize),
     ciphertext: data.subarray(headerSize, trailer),
     counter: view.getBigUint64(trailer),
-    keyId: data[data.length - 1]!,
+    keyId: data[data.length - 2]!,
   }
 }
 

@@ -283,4 +283,5 @@ export const en: Record<string, string> = {
   'encryption.reason.peerUnsupported': "transport only: your peer's browser cannot encrypt frames. Enabling the layer one-way is not an option — the other side would receive noise instead of sound.",
   'encryption.reason.attachFailed': "transport only: the browser refused to attach encryption to the tracks. See the console for details.",
   'encryption.reason.peerPlaintext': "transport only: your peer was sending frames unencrypted, so the layer had to be dropped — otherwise the call would stay broken. A working call on transport encryption is more honest than a broken one on end-to-end.",
+  'session.keyMismatch': 'The two sides ended up with different encryption keys — audio and video cannot be read. End the call and start again.',
 }

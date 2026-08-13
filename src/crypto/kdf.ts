@@ -150,6 +150,22 @@ export function keyLabel(kind: MediaKind, direction: Direction, role: Role): str
   return `p2p-call/v1/${kind}/${sender}`
 }
 
+/**
+ * Открытая контрольная сумма ключа направления.
+ *
+ * Нужна, чтобы расхождение ключей называлось расхождением ключей. Иначе оно
+ * приходит как OperationError на каждом кадре — сообщение, из которого нельзя
+ * понять, разошлись ключи, счётчики или разметка кадра.
+ *
+ * Выводится отдельной меткой HKDF, поэтому по ней не восстановить ни ключ, ни
+ * цепочку: раскрывать её собеседнику, который и так владеет тем же ключом,
+ * безопасно.
+ */
+export async function keyCheck(keys: DirectionKeys): Promise<string> {
+  const material = await expand(keys.chain, 'p2p-call/v1/key-check')
+  return [...material.subarray(0, 4)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 /** Шаг ratchet: из текущего ключа выводится следующий, обратно не восстановимо. */
 export async function ratchet(current: DirectionKeys): Promise<DirectionKeys> {
   const nextMaterial = await expand(current.chain, 'p2p-call/v1/ratchet')

@@ -118,7 +118,7 @@ describe('packFrame / unpackFrame', () => {
     const header = bytes(unencryptedHeaderSize(codec, isKeyFrame), 3)
     const ciphertext = bytes(80, 9)
     const packed = packFrame(header, ciphertext, counter, keyId)
-    return { header, ciphertext, packed, unpacked: unpackFrame(packed, codec, isKeyFrame) }
+    return { header, ciphertext, packed, unpacked: unpackFrame(packed) }
   }
 
   it('восстанавливает заголовок, шифртекст, счётчик и id ключа', () => {
@@ -167,10 +167,31 @@ describe('packFrame / unpackFrame', () => {
     // Данные приходят от собеседника: короткий кадр должен отвергаться,
     // а не приводить к чтению за границей буфера.
     const tooShort = new Uint8Array(unencryptedHeaderSize(codec, isKeyFrame) + TAG_BYTES)
-    expect(() => unpackFrame(tooShort, codec, isKeyFrame)).toThrow(FrameFormatError)
+    expect(() => unpackFrame(tooShort)).toThrow(FrameFormatError)
   })
 
   it('отвергает пустой кадр', () => {
-    expect(() => unpackFrame(new Uint8Array(0), codec, isKeyFrame)).toThrow(FrameFormatError)
+    expect(() => unpackFrame(new Uint8Array(0))).toThrow(FrameFormatError)
+  })
+
+  it('переносит длину заголовка, а не вычисляет её на приёме заново', () => {
+    // Приёмник не всегда знает кодек и не в каждом браузере видит признак
+    // ключевого кадра. Разойдясь с отправителем на байт, он строит другой
+    // additionalData, и GCM отвергает вообще всё, не называя причины.
+    for (const size of [0, 1, 3, 10, 255]) {
+      const packed = packFrame(bytes(size, 3), bytes(40, 9), 1n, 0)
+      expect(unpackFrame(packed).header.length, String(size)).toBe(size)
+    }
+  })
+
+  it('отвергает заголовок, который не помещается в присланный кадр', () => {
+    const packed = packFrame(bytes(3, 3), bytes(40, 9), 1n, 0)
+    packed[packed.length - 1] = 200
+
+    expect(() => unpackFrame(packed)).toThrow(FrameFormatError)
+  })
+
+  it('отвергает заголовок длиннее одного байта: длину некуда записать', () => {
+    expect(() => packFrame(bytes(256), bytes(10), 0n, 0)).toThrow(FrameFormatError)
   })
 })

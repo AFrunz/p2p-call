@@ -100,7 +100,7 @@ async function decrypt(frame: EncodedFrame, options: TransformOptions): Promise<
   }
 
   const data = new Uint8Array(frame.data)
-  const unpacked = unpackFrame(data, options.codec, isKeyFrame(frame))
+  const unpacked = unpackFrame(data)
   const key = await state.keyFor(unpacked.keyId)
 
   const plaintext = new Uint8Array(

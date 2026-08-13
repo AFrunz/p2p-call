@@ -18,6 +18,7 @@ export type ControlMessage =
   | { t: 'pong'; ts: number }
   | { t: 'frames'; ok: number; failed: number }
   | { t: 'encryption'; attached: boolean; support: TransformSupportName }
+  | { t: 'keyCheck'; audio: string; video: string }
   | { t: 'bye' }
 
 export function encodeMessage(message: ControlMessage): string {
@@ -76,11 +77,22 @@ export function decodeMessage(raw: string): ControlMessage | null {
       if (typeof support !== 'string' || !SUPPORT_NAMES.includes(support)) return null
       return { t: 'encryption', attached, support: support as TransformSupportName }
     }
+    case 'keyCheck': {
+      const audio = source['audio']
+      const video = source['video']
+      if (!isCheck(audio) || !isCheck(video)) return null
+      return { t: 'keyCheck', audio, video }
+    }
     case 'bye':
       return { t: 'bye' }
     default:
       return null
   }
+}
+
+/** Контрольная сумма — ровно восемь шестнадцатеричных цифр. */
+function isCheck(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}$/.test(value)
 }
 
 function isCount(value: unknown): value is number {

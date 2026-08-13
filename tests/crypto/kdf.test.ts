@@ -5,6 +5,7 @@ import {
   deriveSharedSecret,
   exportPublicKey,
   generateKeyPair,
+  keyCheck,
   importPublicKey,
   keyLabel,
   mixPassphrase,
@@ -292,5 +293,33 @@ describe('mixRoomSecret', () => {
     const serverGuess = await deriveMediaKeys(secret, 'responder')
 
     expect(await interoperates(withKeys.audio.send, serverGuess.audio.recv)).toBe(false)
+  })
+
+  it('контрольная сумма сходится у send одной стороны и recv другой', async () => {
+    const secret = new Uint8Array(32).fill(11) as Uint8Array<ArrayBuffer>
+    const initiator = await deriveMediaKeys(secret, 'initiator')
+    const responder = await deriveMediaKeys(secret, 'responder')
+
+    expect(await keyCheck(initiator.audio.send)).toBe(await keyCheck(responder.audio.recv))
+    expect(await keyCheck(initiator.video.recv)).toBe(await keyCheck(responder.video.send))
+  })
+
+  it('контрольная сумма расходится, когда роли совпали по ошибке', async () => {
+    // Ровно этот случай и надо ловить: обе стороны считают себя инициатором,
+    // сверочная фраза при этом сходится, а медиаключи — нет.
+    const secret = new Uint8Array(32).fill(11) as Uint8Array<ArrayBuffer>
+    const one = await deriveMediaKeys(secret, 'initiator')
+    const two = await deriveMediaKeys(secret, 'initiator')
+
+    expect(await keyCheck(one.audio.send)).not.toBe(await keyCheck(two.audio.recv))
+  })
+
+  it('по контрольной сумме не восстановить ключ направления', async () => {
+    const secret = new Uint8Array(32).fill(11) as Uint8Array<ArrayBuffer>
+    const keys = (await deriveMediaKeys(secret, 'initiator')).audio.send
+
+    const check = await keyCheck(keys)
+    expect(check).toMatch(/^[0-9a-f]{8}$/)
+    expect(check).not.toBe(await keyCheck(await ratchet(keys)))
   })
 })
