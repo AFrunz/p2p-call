@@ -13,6 +13,49 @@ export function createConnection(iceServers: RTCIceServer[]): RTCPeerConnection 
 }
 
 /**
+ * Кодеки, чью разметку мы умеем оставлять открытой.
+ *
+ * Шифрование кадров обязано не трогать первые байты: по ним пакетизатор режет
+ * кадр на RTP-пакеты, а декодер собирает обратно. Для VP8 это ровно три байта
+ * (десять у ключевого кадра) — их мы и оставляем. У H.264 разметка совсем
+ * другая: там NAL-юниты, и зашифровав их, мы отдаём пакетизатору мусор. Кадр
+ * уезжает разбитым не по границам, приходит другой длины, и GCM отвергает всё
+ * подряд, не называя причины.
+ *
+ * Разбирать NAL-юниты ради этого незачем: VP8 умеют все браузеры.
+ */
+const FRAME_SAFE_VIDEO = ['video/vp8', 'video/rtx', 'video/red', 'video/ulpfec', 'video/flexfec-03']
+
+/**
+ * Оставляет для видео только кодеки, разметку которых мы разбираем.
+ *
+ * Вызывать обязательно до createOffer и createAnswer — иначе предпочтение уже
+ * не попадёт в SDP. Возвращает false, если браузер не даёт выбирать: тогда
+ * остаётся надеяться на VP8 по умолчанию.
+ */
+export function restrictVideoCodecs(connection: RTCPeerConnection): boolean {
+  const capabilities = RTCRtpReceiver.getCapabilities?.('video')
+  const preferred = (capabilities?.codecs ?? []).filter((codec) =>
+    FRAME_SAFE_VIDEO.includes(codec.mimeType.toLowerCase()),
+  )
+  if (preferred.length === 0) return false
+
+  let applied = false
+  for (const transceiver of connection.getTransceivers()) {
+    if (transceiver.receiver.track?.kind !== 'video') continue
+    if (typeof transceiver.setCodecPreferences !== 'function') continue
+
+    try {
+      transceiver.setCodecPreferences(preferred)
+      applied = true
+    } catch (error) {
+      console.warn('[p2p] не удалось ограничить набор видеокодеков:', error)
+    }
+  }
+  return applied
+}
+
+/**
  * Ждёт окончания сбора ICE-кандидатов.
  *
  * Код подключения показывается один раз и целиком, поэтому trickle здесь не

@@ -285,4 +285,5 @@ export const en: Record<string, string> = {
   'encryption.reason.peerPlaintext': "transport only: your peer was sending frames unencrypted, so the layer had to be dropped — otherwise the call would stay broken. A working call on transport encryption is more honest than a broken one on end-to-end.",
   'session.keyMismatch': 'The two sides ended up with different encryption keys — audio and video cannot be read. End the call and start again.',
   'checks.verdict.blockedIpv6.note': 'The STUN servers stayed silent — there is probably no IPv4 route out. But a global IPv6 address is available, and it leads straight through, bypassing NAT. The call will work if your peer has IPv6 too.',
+  'encryption.reason.codecUnsupported': 'transport only: the video codec that was negotiated has a frame layout we do not parse. Encrypting it would hand your peer a stream they could not read at all.',
 }

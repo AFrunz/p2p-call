@@ -293,6 +293,7 @@ describe('localeName', () => {
       'peerUnsupported',
       'attachFailed',
       'peerPlaintext',
+      'codecUnsupported',
     ]
 
     for (const locale of LOCALES) {

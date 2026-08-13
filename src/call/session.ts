@@ -40,7 +40,7 @@ import {
 import type { Role } from '../signaling/types.js'
 import type { QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
-import { StatsCollector, createConnection, waitForGathering } from './peer.js'
+import { StatsCollector, createConnection, restrictVideoCodecs, waitForGathering } from './peer.js'
 import type { CallStats } from './peer.js'
 import {
   attachAll,
@@ -105,6 +105,7 @@ export type EncryptionReason =
   | 'peerUnsupported'
   | 'attachFailed'
   | 'peerPlaintext'
+  | 'codecUnsupported'
 
 export interface SessionView {
   phase: Phase
@@ -562,6 +563,12 @@ export class CallSession {
       }
     }
 
+    // До createOffer и createAnswer: позже предпочтение в SDP уже не попадёт.
+    if (detectTransformSupport() !== 'none') {
+      const restricted = restrictVideoCodecs(connection)
+      console.debug(`[p2p] видео ограничено разбираемыми кодеками: ${restricted}`)
+    }
+
     connection.addEventListener('track', (event) => {
       this.remoteStream.addTrack(event.track)
       console.debug(
@@ -930,6 +937,14 @@ export class CallSession {
       return false
     }
 
+    // Разметку кадра мы разбираем только у VP8. Согласовалось другое — честнее
+    // остаться на транспортном шифровании, чем отдать поток, который собеседник
+    // не сможет прочесть ни одним кадром.
+    if (!this.videoCodecSupported()) {
+      this.encryptionReason = 'codecUnsupported'
+      return false
+    }
+
     const worker = new Worker(new URL('../crypto/media-worker.js', import.meta.url), {
       type: 'module',
     })
@@ -1202,6 +1217,18 @@ export class CallSession {
    * не сошлись — это расхождение ключей, и назвать его надо так, а не оставлять
    * в виде OperationError на каждом кадре.
    */
+  /** Разбираем ли мы разметку согласованного видеокодека. */
+  private videoCodecSupported(): boolean {
+    const receiver = this.connection?.getReceivers().find((item) => item.track?.kind === 'video')
+    if (receiver === undefined) return true
+
+    const codec = negotiatedCodec(receiver, 'video')
+    if (codec === 'vp8') return true
+
+    console.debug(`[p2p] видео согласовано как ${codec} — разметку такого кадра мы не разбираем`)
+    return false
+  }
+
   private async announceKeyCheck(): Promise<void> {
     if (this.keys === null) return
 
