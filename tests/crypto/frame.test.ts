@@ -257,4 +257,15 @@ describe('packFrame / unpackFrame', () => {
       expect((error as FrameFormatError).plaintext).toBe(true)
     }
   })
+
+  it('не считает пустой кадр доводом в пользу открытого текста', () => {
+    // В паузах речи кодек присылает кадры нулевой длины. Это тишина, а не
+    // выключенный у собеседника слой — снимать из-за них шифрование нельзя.
+    try {
+      unpackFrame(new Uint8Array(0))
+      expect.unreachable()
+    } catch (error) {
+      expect((error as FrameFormatError).plaintext).toBe(false)
+    }
+  })
 })

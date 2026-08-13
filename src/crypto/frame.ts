@@ -184,8 +184,11 @@ export interface UnpackedFrame {
 export function unpackFrame(data: Bytes): UnpackedFrame {
   const minimum = TAG_BYTES + TRAILER_BYTES
   if (data.length < minimum) {
+    // Пустой кадр — не довод в пользу открытого текста: так выглядит тишина в
+    // паузах, а не выключенное шифрование у собеседника.
     throw new FrameFormatError(
       `кадр слишком короткий: ${data.length}, минимум ${minimum} (тег + трейлер)`,
+      data.length > 0,
     )
   }
 
