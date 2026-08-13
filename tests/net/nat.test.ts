@@ -263,16 +263,20 @@ describe('classifyConnection', () => {
     ).toBe('ipv6')
   })
 
-  it('не называет IPv6 путь, где глобальный адрес только с одной стороны', () => {
-    // Вторая сторона в IPv4 — значит где-то по дороге всё же есть NAT.
-    expect(
-      classifyConnection({
-        localType: 'host',
-        localAddress: '2a00:1450:4010:c0f::5e',
-        remoteType: 'srflx',
-        remoteAddress: '203.0.113.7',
-      }),
-    ).toBe('nat')
+  it('не называет IPv6 путь по адресам, которые наружу не маршрутизируются', () => {
+    // Link-local и unique-local IPv6 глобальными не считаются: пара на них
+    // означает локальную сеть или VPN, а не прямой выход в интернет.
+    for (const address of ['fe80::1', 'fd00::1']) {
+      expect(
+        classifyConnection({
+          localType: 'srflx',
+          localAddress: address,
+          remoteType: 'srflx',
+          remoteAddress: '203.0.113.7',
+        }),
+        address,
+      ).toBe('nat')
+    }
   })
 
   it('не считает IPv6 путь по link-local и unique-local адресам', () => {
@@ -315,5 +319,30 @@ describe('classifyConnection', () => {
         remoteAddress: '198.51.100.20',
       }),
     ).toBe('nat')
+  })
+
+  it('называет IPv6 даже когда адрес собеседника скрыт', () => {
+    // Браузер вправе не отдавать адрес удалённого кандидата в статистике.
+    // Пары не смешивают семейства адресов, поэтому глобального IPv6 на своей
+    // стороне достаточно — иначе стороны назвали бы один путь по-разному.
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: '2a00:1450:4010:c0f::5e',
+        remoteType: 'host',
+        remoteAddress: '',
+      }),
+    ).toBe('ipv6')
+  })
+
+  it('видит IPv6 и когда скрыт свой адрес', () => {
+    expect(
+      classifyConnection({
+        localType: 'host',
+        localAddress: '',
+        remoteType: 'host',
+        remoteAddress: '2a00:1450:4010:c0f::5e',
+      }),
+    ).toBe('ipv6')
   })
 })

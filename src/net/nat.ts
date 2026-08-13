@@ -182,8 +182,11 @@ export function classifyConnection(pair: SelectedPair): ConnectionRoute {
     if (isMdnsAddress(pair.localAddress) || isPrivateAddress(pair.localAddress)) return 'local'
   }
 
-  // Глобальный IPv6 с обеих сторон — связь без всякого отображения адресов.
-  if (isGlobalIpv6(pair.localAddress) && isGlobalIpv6(pair.remoteAddress)) return 'ipv6'
+  // Достаточно глобального IPv6 на одном конце: пары кандидатов не смешивают
+  // семейства адресов, поэтому второй конец тоже IPv6. Требовать оба адреса
+  // нельзя — браузер вправе не отдавать адрес собеседника в статистике, и
+  // тогда стороны называли бы один и тот же путь по-разному.
+  if (isGlobalIpv6(pair.localAddress) || isGlobalIpv6(pair.remoteAddress)) return 'ipv6'
 
   return 'nat'
 }
