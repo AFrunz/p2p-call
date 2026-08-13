@@ -25,9 +25,19 @@ const MAX_COUNTER = 2n ** 64n - 1n
 const VIDEO_HEADER = { key: 10, delta: 3 } as const
 
 export class FrameFormatError extends Error {
-  constructor(message: string) {
+  /**
+   * Кадр вообще не проходил через наше шифрование.
+   *
+   * Отличать это от неподошедшего ключа обязательно: короткий кадр — довод в
+   * пользу того, что у собеседника слой выключен, а промах по ключу таким
+   * доводом не является и не должен приводить к снятию шифрования.
+   */
+  readonly plaintext: boolean
+
+  constructor(message: string, plaintext = true) {
     super(message)
     this.name = 'FrameFormatError'
+    this.plaintext = plaintext
   }
 }
 

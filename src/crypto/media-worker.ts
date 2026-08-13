@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { nextKeyId, ratchet } from './kdf.js'
+import { ReceiverKeys } from './generations.js'
 import type { DirectionKeys } from './kdf.js'
 import {
   FrameFormatError,
@@ -29,25 +29,14 @@ export interface TransformOptions {
   keys: DirectionKeys
 }
 
-/** Сколько поколений ключа держим на приёме: кадры в полёте отстают от ротации. */
-const KEY_HISTORY = 4
-
 interface SenderState {
   counter: bigint
   keyId: number
   keys: DirectionKeys
 }
 
-interface ReceiverState {
-  /** Поколения ключей по их идентификатору. */
-  generations: Map<number, CryptoKey>
-  /** Последнее выведенное поколение — от него идём вперёд при ротации. */
-  latest: DirectionKeys
-  latestId: number
-}
-
 const senders = new Map<string, SenderState>()
-const receivers = new Map<string, ReceiverState>()
+const receivers = new Map<string, ReceiverKeys>()
 
 /** Счётчики по каждому потоку: без них не понять, доходят ли кадры вообще. */
 const counters = new Map<string, { ok: number; failed: number; plaintext: number }>()
@@ -106,17 +95,13 @@ async function decrypt(frame: EncodedFrame, options: TransformOptions): Promise<
   const id = streamKey(options)
   let state = receivers.get(id)
   if (state === undefined) {
-    state = {
-      generations: new Map([[0, options.keys.key]]),
-      latest: options.keys,
-      latestId: 0,
-    }
+    state = new ReceiverKeys(options.keys)
     receivers.set(id, state)
   }
 
   const data = new Uint8Array(frame.data)
   const unpacked = unpackFrame(data, options.codec, isKeyFrame(frame))
-  const key = await keyForGeneration(state, unpacked.keyId)
+  const key = await state.keyFor(unpacked.keyId)
 
   const plaintext = new Uint8Array(
     await crypto.subtle.decrypt(
@@ -134,32 +119,6 @@ async function decrypt(frame: EncodedFrame, options: TransformOptions): Promise<
   restored.set(unpacked.header, 0)
   restored.set(plaintext, unpacked.header.length)
   frame.data = restored.buffer
-}
-
-/**
- * Догоняет ротацию отправителя по keyId из кадра. Шагов вперёд ограниченное
- * число: иначе подделанный keyId заставит крутить ratchet вечно.
- */
-async function keyForGeneration(state: ReceiverState, keyId: number): Promise<CryptoKey> {
-  const known = state.generations.get(keyId)
-  if (known !== undefined) return known
-
-  for (let step = 0; step < KEY_HISTORY; step++) {
-    state.latest = await ratchet(state.latest)
-    state.latestId = nextKeyId(state.latestId)
-    state.generations.set(state.latestId, state.latest.key)
-
-    if (state.latestId === keyId) {
-      // Старые поколения держим ровно столько, сколько нужно кадрам в полёте.
-      for (const id of state.generations.keys()) {
-        if (state.generations.size > KEY_HISTORY) state.generations.delete(id)
-        else break
-      }
-      return state.latest.key
-    }
-  }
-
-  throw new FrameFormatError(`неизвестное поколение ключа: ${keyId}`)
 }
 
 function transformer(options: TransformOptions): TransformStream {
@@ -183,7 +142,7 @@ function transformer(options: TransformOptions): TransformStream {
         state.failed++
         // Кадр, который короче нашего же заголовка, шифровали не мы. Это не
         // сбой расшифровки, а признак того, что на той стороне слой выключен.
-        if (error instanceof FrameFormatError) state.plaintext++
+        if (error instanceof FrameFormatError && error.plaintext) state.plaintext++
 
         if (state.failed === 1 || state.failed % 200 === 0) {
           report(id, error instanceof Error ? error.message : String(error))

@@ -1085,6 +1085,11 @@ export class CallSession {
           `[p2p] собеседник о шифровании кадров: навешено ${control.attached}` +
             `, поддержка ${control.support}`,
         )
+        // Прямой ответ надёжнее счёта испорченных кадров: там любой промах по
+        // ключу выглядел как открытый текст, и слой снимался напрасно.
+        if (!control.attached) {
+          this.downgradeEncryption(control.support === 'none' ? 'peerUnsupported' : 'attachFailed')
+        }
       }
       if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
       if (control.t === 'bye') this.endCall('peer')
@@ -1106,7 +1111,7 @@ export class CallSession {
    * девается — отключить его в WebRTC нельзя, — но сказать о понижении надо
    * вслух, и бейдж это показывает.
    */
-  private downgradeEncryption(): void {
+  private downgradeEncryption(reason: EncryptionReason = 'peerPlaintext'): void {
     if (!this.view.frameEncryption || this.connection === null) return
 
     console.debug('[p2p] собеседник шлёт кадры открытым текстом — снимаем шифрование кадров')
@@ -1114,10 +1119,10 @@ export class CallSession {
     this.worker?.terminate()
     this.worker = null
 
-    this.encryptionReason = 'peerPlaintext'
+    this.encryptionReason = reason
     this.patch({
       frameEncryption: false,
-      encryptionReason: 'peerPlaintext',
+      encryptionReason: reason,
       notice: message('session.encryptionDowngraded'),
     })
   }
