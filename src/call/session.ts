@@ -42,7 +42,13 @@ import type { QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
 import { StatsCollector, createConnection, waitForGathering } from './peer.js'
 import type { CallStats } from './peer.js'
-import { attachAll, attachTransform, detectTransformSupport, negotiatedCodec } from './transform.js'
+import {
+  attachAll,
+  attachTransform,
+  detachAll,
+  detectTransformSupport,
+  negotiatedCodec,
+} from './transform.js'
 
 /**
  * Сколько ждём соединения после начала проверки пар.
@@ -63,6 +69,9 @@ const MAX_ANSWER_REFRESH = 3
  * этом и держится ожидание, пока человек несёт код.
  */
 const KEEP_ALIVE_INTERVAL_MS = 4000
+
+/** Сколько заведомо чужих кадров подряд считаем доказательством, а не помехой. */
+const PLAINTEXT_THRESHOLD = 100
 
 export type Phase =
   | 'idle'
@@ -879,7 +888,15 @@ export class CallSession {
       console.debug('[p2p] воркер шифрования не запустился:', event.message)
     })
     worker.addEventListener('message', (event: MessageEvent) => {
-      const data = event.data as { t?: string; id?: string; ok?: number; failed?: number; reason?: string; codec?: string }
+      const data = event.data as {
+        t?: string
+        id?: string
+        ok?: number
+        failed?: number
+        plaintext?: number
+        reason?: string
+        codec?: string
+      }
       if (data.t === 'attached') console.debug(`[p2p] шифрование включено: ${data.id} (${data.codec})`)
       if (data.t !== 'stats') return
 
@@ -890,8 +907,13 @@ export class CallSession {
 
       // Свои провалы расшифровки собеседник у себя не видит: у него всё
       // отправляется штатно. Поэтому сообщаем их сами.
-      if (data.id?.endsWith('/recv') === true) {
-        this.sendControl({ t: 'frames', ok: data.ok ?? 0, failed: data.failed ?? 0 })
+      if (data.id?.endsWith('/recv') !== true) return
+      this.sendControl({ t: 'frames', ok: data.ok ?? 0, failed: data.failed ?? 0 })
+
+      // Кадры короче нашего заголовка шифровали не мы: на той стороне слой
+      // выключен, и согласование это не поймало.
+      if ((data.ok ?? 0) === 0 && (data.plaintext ?? 0) >= PLAINTEXT_THRESHOLD) {
+        this.downgradeEncryption()
       }
     })
 
@@ -1027,6 +1049,25 @@ export class CallSession {
    * поток до него доезжает, но читается как мусор: у нас шифрование включено,
    * у него — нет. В своей консоли этого не видно, отсюда и отчёт.
    */
+  /**
+   * Выключает шифрование кадров, когда собеседник его не применяет.
+   *
+   * Иначе звонок остаётся сломанным в обе стороны: его кадры мы отбрасываем,
+   * наши он декодирует как шум. Транспортное шифрование при этом никуда не
+   * девается — отключить его в WebRTC нельзя, — но сказать о понижении надо
+   * вслух, и бейдж это показывает.
+   */
+  private downgradeEncryption(): void {
+    if (!this.view.frameEncryption || this.connection === null) return
+
+    console.debug('[p2p] собеседник шлёт кадры открытым текстом — снимаем шифрование кадров')
+    detachAll(this.connection)
+    this.worker?.terminate()
+    this.worker = null
+
+    this.patch({ frameEncryption: false, notice: message('session.encryptionDowngraded') })
+  }
+
   private onPeerFrames(ok: number, failed: number): void {
     console.debug(`[p2p] собеседник о наших кадрах: расшифровал ${ok}, отбросил ${failed}`)
     if (ok > 0 || failed < 100) return

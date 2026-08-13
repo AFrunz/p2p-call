@@ -50,11 +50,18 @@ const senders = new Map<string, SenderState>()
 const receivers = new Map<string, ReceiverState>()
 
 /** Счётчики по каждому потоку: без них не понять, доходят ли кадры вообще. */
-const counters = new Map<string, { ok: number; failed: number }>()
+const counters = new Map<string, { ok: number; failed: number; plaintext: number }>()
 
 function report(id: string, reason?: string): void {
-  const state = counters.get(id) ?? { ok: 0, failed: 0 }
-  self.postMessage({ t: 'stats', id, ok: state.ok, failed: state.failed, reason })
+  const state = counters.get(id) ?? { ok: 0, failed: 0, plaintext: 0 }
+  self.postMessage({
+    t: 'stats',
+    id,
+    ok: state.ok,
+    failed: state.failed,
+    plaintext: state.plaintext,
+    reason,
+  })
 }
 
 interface EncodedFrame {
@@ -159,7 +166,7 @@ function transformer(options: TransformOptions): TransformStream {
   const apply = options.direction === 'send' ? encrypt : decrypt
 
   const id = streamKey(options)
-  counters.set(id, { ok: 0, failed: 0 })
+  counters.set(id, { ok: 0, failed: 0, plaintext: 0 })
 
   return new TransformStream({
     async transform(frame: EncodedFrame, controller) {
@@ -174,6 +181,10 @@ function transformer(options: TransformOptions): TransformStream {
         // Битый или чужой кадр просто выбрасываем: уронив поток, мы оборвали
         // бы весь звонок из-за одного пакета.
         state.failed++
+        // Кадр, который короче нашего же заголовка, шифровали не мы. Это не
+        // сбой расшифровки, а признак того, что на той стороне слой выключен.
+        if (error instanceof FrameFormatError) state.plaintext++
+
         if (state.failed === 1 || state.failed % 200 === 0) {
           report(id, error instanceof Error ? error.message : String(error))
         }

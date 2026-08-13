@@ -126,3 +126,23 @@ export function attachAll(
 
   return attached
 }
+
+/**
+ * Снимает шифрование со всех дорожек.
+ *
+ * Нужно, когда собеседник кадры не шифрует: наши он всё равно прочесть не
+ * сможет, а мы не сможем прочесть его. Рабочий звонок на транспортном
+ * шифровании честнее, чем сломанный на сквозном, — при условии, что об этом
+ * сказано вслух.
+ */
+export function detachAll(connection: RTCPeerConnection): void {
+  const endpoints: (RTCRtpSender | RTCRtpReceiver)[] = [
+    ...connection.getSenders(),
+    ...connection.getReceivers(),
+  ]
+
+  for (const endpoint of endpoints) {
+    const holder = endpoint as unknown as Record<string, unknown>
+    if ('transform' in holder) holder['transform'] = null
+  }
+}
