@@ -183,4 +183,29 @@ describe('уборка комнат', () => {
 
     expect(rooms.join(OTHER, peer(), 60_000)).toMatchObject({ ok: true })
   })
+
+  it('отдаёт вернувшемуся свободную роль, а не следующую по порядку', () => {
+    // Инициатор перезагрузил вкладку и вернулся вторым. Считая по порядку
+    // прихода, он получил бы роль отвечающего — и предложение соединения не
+    // создал бы никто.
+    const rooms = new RoomRegistry(10, 1000)
+    const first = peer()
+    const second = peer()
+
+    expect(rooms.join(ROOM, first)).toMatchObject({ role: 'initiator' })
+    expect(rooms.join(ROOM, second)).toMatchObject({ role: 'responder' })
+
+    rooms.leave(first)
+    expect(rooms.join(ROOM, peer())).toMatchObject({ role: 'initiator' })
+  })
+
+  it('освобождает роль ушедшего для следующего участника', () => {
+    const rooms = new RoomRegistry(10, 1000)
+    const first = peer()
+
+    rooms.join(ROOM, first)
+    rooms.leave(first)
+
+    expect(rooms.join(ROOM, peer())).toMatchObject({ role: 'initiator' })
+  })
 })

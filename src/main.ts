@@ -769,6 +769,9 @@ function render(view: SessionView): void {
   if (alive && view.inviteLink !== null && view.inviteLink !== inviteLink) {
     inviteLink = view.inviteLink
     el<HTMLInputElement>('invite-link').value = inviteLink
+    // Приглашение держим в адресной строке, пока звонок жив: перезагрузка
+    // вкладки тогда возвращает человека в ту же комнату, а не на главную.
+    history.replaceState(null, '', inviteLink)
     renderServerPanel()
   }
 
@@ -871,6 +874,8 @@ function onPhase(view: SessionView): void {
     case 'ended':
       stopTimer()
       releaseMedia()
+      // Разговор кончился — приглашению в адресной строке больше не место.
+      history.replaceState(null, '', location.pathname)
       showEnded(view)
       break
   }
@@ -898,6 +903,10 @@ async function enterCall(): Promise<void> {
  * «начать», а не чужой адрес из прошлого. Коды в полях — по той же причине.
  */
 function forgetSession(): void {
+  // Секрет комнаты не должен пережить разговор: в истории браузера ему не
+  // место, а вернуться по нему уже некуда.
+  history.replaceState(null, '', location.pathname)
+
   session = null
   lastPhase = null
   lastCopied = false
@@ -931,6 +940,11 @@ function renderCall(view: SessionView): void {
   )
   el('badge-route').classList.toggle('badge--warn', waiting)
   show('call-waiting', waiting)
+  // Ожидание бывает двух родов: собеседник ещё не приходил или уже уходил.
+  // Второе тревожнее — про него надо сказать прямо, а не молчать.
+  const returning = waiting && view.peerEverJoined
+  setText('waiting-title', t(returning ? 'call.waitingBack' : 'call.waitingTitle'))
+  setText('waiting-note', t(returning ? 'call.waitingBackNote' : 'call.waitingNote'))
   show('badge-timer', !waiting)
   // В ожидании своё видео уже занимает середину экрана — маленькое окно в углу
   // показывало бы то же самое второй раз.
@@ -1471,8 +1485,6 @@ async function followInviteLink(url: string): Promise<void> {
   const created = newSession()
   await created.prepare()
   await created.joinLink(url)
-  // Секрет комнаты не должен остаться в истории браузера.
-  history.replaceState(null, '', location.pathname)
 }
 
 start()

@@ -349,4 +349,7 @@ export const en: Record<string, string> = {
   'connecting.note': 'Both sides start connecting at the same moment, when the time runs out. The countdown length is set in the settings.',
   'connecting.foot': 'Wait for the countdown to finish — nothing starts earlier. Do not close the tab; minimising is fine.',
   'exchange.building': 'Building the code…',
+  'session.peerLeftTemporarily': 'Your peer has left — waiting for them to come back through the same link.',
+  'call.waitingBack': 'Your peer has left',
+  'call.waitingBackNote': 'The connection dropped or they closed the tab. The call resumes by itself as soon as they open the link again.',
 }

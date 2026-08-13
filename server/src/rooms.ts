@@ -12,6 +12,8 @@ export interface Peer {
 
 interface Room {
   peers: Peer[]
+  /** Роль каждого участника: она переживает уход и возвращение соседа. */
+  roles: Map<Peer, Role>
   /** Момент, когда комната опустела; null — пока в ней кто-то есть. */
   emptySince: number | null
 }
@@ -44,16 +46,21 @@ export class RoomRegistry {
         this.collect(now)
         if (this.rooms.size >= this.maxRooms) return { ok: false, reason: 'capacity' }
       }
-      room = { peers: [], emptySince: null }
+      room = { peers: [], roles: new Map(), emptySince: null }
       this.rooms.set(roomId, room)
     }
 
     if (room.peers.length >= 2) return { ok: false, reason: 'room-full' }
 
-    const role: Role = room.peers.length === 0 ? 'initiator' : 'responder'
+    // Роль берём свободную, а не по порядку прихода. Иначе после
+    // переподключения инициатор возвращается вторым, получает роль
+    // отвечающего — и предложение соединения не создаёт никто.
     const existing = room.peers[0] ?? null
+    const taken = existing === null ? null : (room.roles.get(existing) ?? null)
+    const role: Role = taken === 'initiator' ? 'responder' : 'initiator'
 
     room.peers.push(peer)
+    room.roles.set(peer, role)
     room.emptySince = null
     this.location.set(peer, roomId)
 
@@ -78,6 +85,7 @@ export class RoomRegistry {
     if (room === undefined) return null
 
     room.peers = room.peers.filter((candidate) => candidate !== peer)
+    room.roles.delete(peer)
     if (room.peers.length === 0) {
       // Не удаляем сразу: собеседник может переподключиться по той же ссылке.
       room.emptySince = now

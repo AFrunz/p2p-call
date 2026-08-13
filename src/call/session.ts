@@ -143,6 +143,8 @@ export interface SessionView {
    * выключена», иначе пустой экран выглядит одинаково в обоих случаях.
    */
   peerPresent: boolean
+  /** Собеседник уже был в комнате: значит его уход — обрыв, а не ожидание. */
+  peerEverJoined: boolean
   /** Наше состояние: по умолчанию входим в звонок молча и без картинки. */
   muted: { audio: boolean; video: boolean }
   /** Есть ли что передавать: без камеры или микрофона кнопки бессмысленны. */
@@ -215,6 +217,7 @@ export class CallSession {
     stats: null,
     peerMuted: { audio: false, video: false },
     peerPresent: false,
+    peerEverJoined: false,
     muted: { audio: true, video: true },
     canSend: { audio: false, video: false },
     notice: null,
@@ -235,6 +238,10 @@ export class CallSession {
   private encryptionReason: EncryptionReason = 'pending'
   /** Что собеседник сказал про свой слой шифрования. null — ещё не говорил. */
   private peerAttachedEncryption: boolean | null = null
+  /** Собеседник попрощался сам: возвращаться он не собирается. */
+  private peerSaidBye = false
+  /** Список ICE от сервера: понадобится снова, если собеседник вернётся. */
+  private lastIceServers: RTCIceServer[] = []
   /** Сколько наших кадров собеседник отбросил в прошлом отчёте. */
   private peerFailedFrames: number | null = null
   /** Потоки, по которым ещё не пришло подтверждение от воркера. */
@@ -508,13 +515,15 @@ export class CallSession {
         void this.onJoined(role, iceServers)
       },
       onPeerJoined: () => {
-        this.patch({ peerPresent: true })
+        this.patch({ peerPresent: true, peerEverJoined: true })
         void this.onPeerJoined()
       },
       onPeerLeft: () => {
-        this.patch({ peerPresent: false })
-        if (this.wasConnected) this.endCall('peer')
-        else this.patch({ error: message('session.peerLeft') })
+        // Уход по своей воле собеседник объявляет сам, отдельным сообщением.
+        // Всё остальное — закрытая вкладка, перезагрузка, обрыв связи — повод
+        // подождать его в комнате, а не заканчивать разговор за него.
+        if (this.peerSaidBye) return this.endCall('peer')
+        this.awaitReturn()
       },
       onSignal: (payload) => {
         void this.onSignal(payload)
@@ -532,7 +541,8 @@ export class CallSession {
 
   private async onJoined(role: Role, iceServers: unknown[]): Promise<void> {
     // Список ICE приходит от сервера: он знает про свой TURN, а мы — нет.
-    await this.openConnection(role, iceServers as RTCIceServer[])
+    this.lastIceServers = iceServers as RTCIceServer[]
+    await this.openConnection(role, this.lastIceServers)
 
     if (role === 'initiator') {
       this.channel = this.connection!.createDataChannel('control', { ordered: true })
@@ -542,7 +552,50 @@ export class CallSession {
     this.patch({ role, ...(role === 'responder' ? { peerPresent: true } : {}) })
   }
 
+  /**
+   * Собеседник пропал, но не прощался.
+   *
+   * Соединение разбираем — прежнее уже мертво, — но комнату и захват держим:
+   * человек остаётся в лобби, видит себя и ждёт возвращения. Ссылка та же,
+   * роль за ним закреплена, так что вернувшийся встанет на своё место.
+   */
+  private awaitReturn(): void {
+    this.connection?.close()
+    this.connection = null
+    this.worker?.terminate()
+    this.worker = null
+    this.keys = null
+    this.channel = null
+    this.heldCandidates = []
+    this.gathered = []
+    this.stopWatchdog()
+    this.stopKeepAlive()
+
+    for (const track of this.remoteStream.getTracks()) {
+      track.stop()
+      this.remoteStream.removeTrack(track)
+    }
+
+    this.patch({
+      phase: 'awaiting-peer',
+      peerPresent: false,
+      sas: null,
+      startAt: null,
+      peerMuted: { audio: false, video: false },
+      notice: message('session.peerLeftTemporarily'),
+    })
+  }
+
   private async onPeerJoined(): Promise<void> {
+    // Вернувшемуся нужно новое соединение: прежнее умерло вместе с ним.
+    if (this.connection === null) {
+      await this.openConnection(this.view.role ?? 'initiator', this.lastIceServers)
+      if (this.view.role === 'initiator') {
+        this.channel = this.connection!.createDataChannel('control', { ordered: true })
+        this.bindChannel(this.channel)
+      }
+    }
+
     if (this.view.role !== 'initiator' || this.connection === null) return
 
     await this.connection.setLocalDescription(await this.connection.createOffer())
@@ -1254,7 +1307,10 @@ export class CallSession {
       if (control.t === 'encrypted') this.logPeerEncrypted(control.audio, control.video)
       if (control.t === 'keyCheck') void this.compareKeys(control.audio, control.video)
       if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
-      if (control.t === 'bye') this.endCall('peer')
+      if (control.t === 'bye') {
+        this.peerSaidBye = true
+        this.endCall('peer')
+      }
     })
   }
 
