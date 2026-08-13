@@ -113,12 +113,26 @@ export function negotiatedCodec(
  * без трансформа, и подставленная позже дорожка уходила открытым текстом —
  * собеседник видел мусор и снимал шифрование у себя.
  */
+export interface AttachResult {
+  /** Ни один конец не отказал на месте. */
+  attached: boolean
+  /**
+   * Потоки, от которых ждём подтверждения воркера.
+   *
+   * Успех конструктора трансформа ещё ничего не значит: воркер может не
+   * запуститься, и кадры пойдут мимо шифрования открытым текстом. Собеседник
+   * увидит мусор, а мы будем уверять его, что всё навешено.
+   */
+  streams: string[]
+}
+
 export function attachAll(
   worker: Worker,
   connection: RTCPeerConnection,
   keys: MediaKeys,
-): boolean {
+): AttachResult {
   let attached = true
+  const streams: string[] = []
 
   for (const transceiver of connection.getTransceivers()) {
     const kind = transceiver.receiver.track?.kind
@@ -130,17 +144,18 @@ export function attachAll(
     ]
 
     for (const { endpoint, direction } of endpoints) {
-      attached =
-        attachTransform(worker, endpoint, {
-          kind,
-          direction,
-          codec: negotiatedCodec(endpoint, kind),
-          keys: keys[kind][direction],
-        }) && attached
+      const ok = attachTransform(worker, endpoint, {
+        kind,
+        direction,
+        codec: negotiatedCodec(endpoint, kind),
+        keys: keys[kind][direction],
+      })
+      if (ok) streams.push(`${kind}/${direction}`)
+      attached = ok && attached
     }
   }
 
-  return attached
+  return { attached, streams }
 }
 
 /**

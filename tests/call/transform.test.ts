@@ -55,7 +55,7 @@ describe('attachAll', () => {
   it('шифрует и отправку, и приём каждой дорожки', () => {
     const audio = transceiver('audio')
     const video = transceiver('video')
-    expect(attachAll(worker, connectionOf([audio, video]), KEYS)).toBe(true)
+    expect(attachAll(worker, connectionOf([audio, video]), KEYS).attached).toBe(true)
 
     expect(optionsOf(audio.sender)).toMatchObject({ kind: 'audio', direction: 'send' })
     expect(optionsOf(audio.receiver)).toMatchObject({ kind: 'audio', direction: 'recv' })
@@ -75,7 +75,7 @@ describe('attachAll', () => {
     // Обычное начало звонка: камеры нет вовсе, микрофон включат через минуту.
     // Пока отправитель пуст, тип известен только по трансиверу.
     const video = transceiver('video', null)
-    expect(attachAll(worker, connectionOf([video]), KEYS)).toBe(true)
+    expect(attachAll(worker, connectionOf([video]), KEYS).attached).toBe(true)
 
     expect(optionsOf(video.sender)).toMatchObject({ kind: 'video', direction: 'send' })
   })
@@ -93,7 +93,7 @@ describe('attachAll', () => {
     vi.stubGlobal('RTCRtpSender', { prototype: {} })
     vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    expect(attachAll(worker, connectionOf([transceiver('audio')]), KEYS)).toBe(false)
+    expect(attachAll(worker, connectionOf([transceiver('audio')]), KEYS).attached).toBe(false)
   })
 
   it('не падает, когда браузер отказал одному концу, и продолжает с остальными', () => {
@@ -109,13 +109,41 @@ describe('attachAll', () => {
       },
     })
 
-    expect(attachAll(worker, connectionOf([audio, video]), KEYS)).toBe(false)
+    expect(attachAll(worker, connectionOf([audio, video]), KEYS).attached).toBe(false)
     expect(optionsOf(video.sender)).toMatchObject({ kind: 'video' })
+  })
+
+  it('перечисляет потоки, от которых ждём подтверждения воркера', () => {
+    // Успех конструктора трансформа ещё ничего не значит: воркер может не
+    // запуститься, и кадры пойдут открытым текстом.
+    const result = attachAll(worker, connectionOf([transceiver('audio'), transceiver('video')]), KEYS)
+
+    expect(result.streams.sort()).toEqual([
+      'audio/recv',
+      'audio/send',
+      'video/recv',
+      'video/send',
+    ])
+  })
+
+  it('не ждёт подтверждения по концу, который отказал сразу', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const audio = transceiver('audio')
+    Object.defineProperty(audio.sender, 'transform', {
+      set() {
+        throw new Error('endpoint is closed')
+      },
+      get() {
+        return undefined
+      },
+    })
+
+    expect(attachAll(worker, connectionOf([audio]), KEYS).streams).toEqual(['audio/recv'])
   })
 
   it('пропускает трансиверы без дорожки на приёме — тип там взять неоткуда', () => {
     const unknown = { sender: endpoint(null), receiver: endpoint(null) }
-    expect(attachAll(worker, connectionOf([unknown]), KEYS)).toBe(true)
+    expect(attachAll(worker, connectionOf([unknown]), KEYS).attached).toBe(true)
     expect(unknown.sender.transform).toBeUndefined()
   })
 })

@@ -71,6 +71,9 @@ const MAX_ANSWER_REFRESH = 3
  */
 const KEEP_ALIVE_INTERVAL_MS = 4000
 
+/** Сколько ждём от воркера подтверждения, что шифрование действительно включилось. */
+const ATTACH_CONFIRM_MS = 5000
+
 export type Phase =
   | 'idle'
   | 'preparing'
@@ -220,6 +223,9 @@ export class CallSession {
   private peerAttachedEncryption: boolean | null = null
   /** Сколько наших кадров собеседник отбросил в прошлом отчёте. */
   private peerFailedFrames: number | null = null
+  /** Потоки, по которым ещё не пришло подтверждение от воркера. */
+  private awaitedStreams = new Set<string>()
+  private confirmTimer: ReturnType<typeof setTimeout> | null = null
   private peerFramesWarned = false
   /**
    * Окно на перенос кода. У создателя — из его настроек, у отвечающего — из
@@ -965,7 +971,10 @@ export class CallSession {
         reason?: string
         codec?: string
       }
-      if (data.t === 'attached') console.debug(`[p2p] шифрование включено: ${data.id} (${data.codec})`)
+      if (data.t === 'attached') {
+        console.debug(`[p2p] шифрование включено: ${data.id} (${data.codec})`)
+        this.onStreamAttached(String(data.id))
+      }
       if (data.t !== 'stats') return
 
       console.debug(
@@ -988,14 +997,48 @@ export class CallSession {
       if (downgrade) this.downgradeEncryption()
     })
 
-    const attached = attachAll(worker, this.connection, this.keys)
+    const { attached, streams } = attachAll(worker, this.connection, this.keys)
     const silent = this.connection.getSenders().filter((sender) => sender.track === null).length
     console.debug(
       `[p2p] трансформ навешен: ${attached}, отправителей ${this.connection.getSenders().length}` +
         ` (без дорожки ${silent}), получателей ${this.connection.getReceivers().length}`,
     )
+
+    this.awaitedStreams = new Set(streams)
+    this.awaitConfirmation()
     this.encryptionReason = attached ? 'active' : 'attachFailed'
     return attached
+  }
+
+  /**
+   * Ждёт от воркера подтверждения по каждому потоку.
+   *
+   * Конструктор трансформа возвращает успех, даже если воркер не запустился:
+   * кадры тогда идут мимо шифрования открытым текстом, а мы уверяем
+   * собеседника, что всё навесили. Он видит вместо видео мусор и не может
+   * понять, чью сторону чинить. Не дождавшись подтверждения, честно снимаем
+   * слой — рабочий звонок на транспортном шифровании лучше сломанного.
+   */
+  private awaitConfirmation(): void {
+    if (this.confirmTimer !== null) clearTimeout(this.confirmTimer)
+    this.confirmTimer = setTimeout(() => {
+      this.confirmTimer = null
+      if (this.awaitedStreams.size === 0) return
+
+      console.debug(
+        `[p2p] воркер не подтвердил шифрование потоков: ${[...this.awaitedStreams].join(', ')}`,
+      )
+      this.downgradeEncryption('attachFailed')
+    }, ATTACH_CONFIRM_MS)
+  }
+
+  private onStreamAttached(id: string): void {
+    this.awaitedStreams.delete(id)
+    if (this.awaitedStreams.size > 0 || this.confirmTimer === null) return
+
+    clearTimeout(this.confirmTimer)
+    this.confirmTimer = null
+    console.debug('[p2p] шифрование подтверждено по всем потокам')
   }
 
   /**
@@ -1351,8 +1394,10 @@ export class CallSession {
     this.releaseTimer = null
     if (this.statsTimer !== null) clearInterval(this.statsTimer)
     if (this.ratchetTimer !== null) clearInterval(this.ratchetTimer)
+    if (this.confirmTimer !== null) clearTimeout(this.confirmTimer)
     this.statsTimer = null
     this.ratchetTimer = null
+    this.confirmTimer = null
 
     this.signaling?.close()
     this.channel?.close()
