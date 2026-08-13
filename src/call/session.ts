@@ -227,6 +227,7 @@ export class CallSession {
   private awaitedStreams = new Set<string>()
   /** Сколько кадров мы зашифровали на отправку — сообщаем собеседнику. */
   private encryptedFrames = { audio: 0, video: 0 }
+  private peerEncryptedLoggedAt: number | null = null
   private confirmTimer: ReturnType<typeof setTimeout> | null = null
   private peerFramesWarned = false
   /**
@@ -1221,11 +1222,7 @@ export class CallSession {
           this.downgradeEncryption(control.support === 'none' ? 'peerUnsupported' : 'attachFailed')
         }
       }
-      if (control.t === 'encrypted') {
-        console.debug(
-          `[p2p] собеседник зашифровал кадров: аудио ${control.audio}, видео ${control.video}`,
-        )
-      }
+      if (control.t === 'encrypted') this.logPeerEncrypted(control.audio, control.video)
       if (control.t === 'keyCheck') void this.compareKeys(control.audio, control.video)
       if (control.t === 'frames') this.onPeerFrames(control.ok, control.failed)
       if (control.t === 'bye') this.endCall('peer')
@@ -1276,7 +1273,11 @@ export class CallSession {
    * число провалов между двумя подряд отчётами.
    */
   private onPeerFrames(ok: number, failed: number): void {
-    console.debug(`[p2p] собеседник о наших кадрах: расшифровал ${ok}, отбросил ${failed}`)
+    // Пока собеседник всё читает, повторять это каждую секунду незачем: в
+    // журнале должно быть видно неладное, а не ровное течение.
+    if (failed > 0 || this.peerFailedFrames === null) {
+      console.debug(`[p2p] собеседник о наших кадрах: расшифровал ${ok}, отбросил ${failed}`)
+    }
 
     const previous = this.peerFailedFrames
     this.peerFailedFrames = failed
@@ -1320,6 +1321,20 @@ export class CallSession {
 
     console.debug(`[p2p] видео согласовано как ${codec} — разметку такого кадра мы не разбираем`)
     return false
+  }
+
+  /**
+   * Счётчики шифрования собеседника — с прореживанием.
+   *
+   * Отчёт приходит раз в секунду: печатать его целиком значит утопить в нём всё
+   * остальное. Печатаем первый и дальше раз в десять секунд.
+   */
+  private logPeerEncrypted(audio: number, video: number): void {
+    const now = Date.now()
+    if (this.peerEncryptedLoggedAt !== null && now - this.peerEncryptedLoggedAt < 10_000) return
+
+    this.peerEncryptedLoggedAt = now
+    console.debug(`[p2p] собеседник зашифровал кадров: аудио ${audio}, видео ${video}`)
   }
 
   private async announceKeyCheck(): Promise<void> {
