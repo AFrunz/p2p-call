@@ -217,6 +217,9 @@ export class CallSession {
   private encryptionReason: EncryptionReason = 'pending'
   /** Что собеседник сказал про свой слой шифрования. null — ещё не говорил. */
   private peerAttachedEncryption: boolean | null = null
+  /** Сколько наших кадров собеседник отбросил в прошлом отчёте. */
+  private peerFailedFrames: number | null = null
+  private peerFramesWarned = false
   /**
    * Окно на перенос кода. У создателя — из его настроек, у отвечающего — из
    * полученного кода: разъехавшиеся окна означали бы, что одна сторона начнёт
@@ -1156,10 +1159,24 @@ export class CallSession {
     this.announceEncryption()
   }
 
+  /**
+   * Что собеседник сделал с нашими кадрами.
+   *
+   * Счётчики накопительные, а первые кадры проваливаются всегда: пока идёт
+   * согласование, трансформ ещё не навешен. Ругаться на накопленную сумму
+   * значит ругаться на нормальный старт звонка, поэтому смотрим, растёт ли
+   * число провалов между двумя подряд отчётами.
+   */
   private onPeerFrames(ok: number, failed: number): void {
     console.debug(`[p2p] собеседник о наших кадрах: расшифровал ${ok}, отбросил ${failed}`)
-    if (ok > 0 || failed < 100) return
 
+    const previous = this.peerFailedFrames
+    this.peerFailedFrames = failed
+    if (ok > 0 || previous === null || failed <= previous || this.peerFramesWarned) return
+
+    this.peerFramesWarned = true
+    // Причину не выдумываем: расхождение ключей уже названо сверкой, снятый
+    // слой — прямым отчётом. Осталось сказать то, что знаем наверняка.
     this.patch({ notice: message('session.peerCannotDecrypt') })
   }
 
