@@ -287,4 +287,5 @@ export const en: Record<string, string> = {
   'checks.verdict.blockedIpv6.note': 'The STUN servers stayed silent — there is probably no IPv4 route out. But a global IPv6 address is available, and it leads straight through, bypassing NAT. The call will work if your peer has IPv6 too.',
   'encryption.reason.codecUnsupported': 'transport only: the video codec that was negotiated has a frame layout we do not parse. Encrypting it would hand your peer a stream they could not read at all.',
   'session.unexpectedError': 'The connection failed: {reason}',
+  'call.selfCamOff': 'your camera is off',
 }

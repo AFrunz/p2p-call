@@ -662,6 +662,7 @@ function renderCall(view: SessionView): void {
   show('call-off', view.peerMuted.video)
   show('badge-peer-mic', view.peerMuted.audio)
   show('badge-self-mic', view.muted.audio && view.canSend.audio)
+  show('badge-self-cam', view.muted.video && view.canSend.video)
   show('pip-off', view.muted.video)
   setPressed('call-mic', !view.muted.audio)
   setPressed('call-cam', !view.muted.video)
