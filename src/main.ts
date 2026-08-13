@@ -765,7 +765,7 @@ function onPhase(view: SessionView): void {
     case 'awaiting-peer':
       // Ссылка готова: человек ждёт собеседника прямо в звонке и может
       // проверить себя, пока тот идёт по ссылке.
-      void enterCall(view)
+      void enterCall()
       break
 
     case 'connected': {
@@ -777,11 +777,10 @@ function onPhase(view: SessionView): void {
       )
 
       attachStream('remote-video', remote)
-      attachStream('local-video', session?.media.local ?? null)
-      void fillDevices()
-      renderQualityPanel()
       startTimer()
-      screen('screen-call')
+      // В режиме с кодами это первый экран звонка: захват дорожек происходит
+      // здесь, а не в комнате ожидания, которой в этом сценарии нет.
+      void enterCall()
 
       // Подключение собеседника — событие, которое легко пропустить: человек
       // мог отойти. Показываем его отдельно, а не только сменой картинки.
@@ -809,7 +808,7 @@ function onPhase(view: SessionView): void {
  * Камера и микрофон включаются выключенными: войти в разговор молча — это
  * осознанный выбор, а не забытая настройка.
  */
-async function enterCall(view: SessionView): Promise<void> {
+async function enterCall(): Promise<void> {
   screen('screen-call')
   attachStream('waiting-video', session?.media.local ?? null)
   attachStream('local-video', session?.media.local ?? null)
@@ -823,7 +822,8 @@ async function enterCall(view: SessionView): Promise<void> {
 
   await fillDevices()
   renderQualityPanel()
-  renderCall(view)
+  // Перерисовку не зовём: она пришла бы со старым видом, снятым до захвата
+  // дорожек, и погасила бы уже правильные значки. Свежий вид принесёт сессия.
 }
 
 /**
@@ -889,7 +889,11 @@ function renderCall(view: SessionView): void {
 
   show('call-off', view.peerMuted.video && !waiting)
   show('peer-mic-off', view.peerMuted.audio && !waiting)
-  show('self-mic-off', view.muted.audio && view.canSend.audio)
+  // Значок нужен и в комнате ожидания: человек проверяет себя именно там, и
+  // выключенный микрофон должен быть виден сразу, а не после первого нажатия.
+  const micOff = view.muted.audio && view.canSend.audio
+  show('self-mic-off', micOff)
+  show('waiting-mic-off', micOff)
   show('pip-off', view.muted.video)
   show('waiting-off', view.muted.video)
   setPressed('call-mic', !view.muted.audio)
