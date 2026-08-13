@@ -61,6 +61,46 @@ export function unencryptedHeaderSize(codec: Codec, isKeyFrame: boolean): number
 }
 
 /**
+ * Ключевой ли это кадр VP8 — по самому кадру, а не по метке браузера.
+ *
+ * Метку `type` у закодированного кадра ставят не все браузеры, и ошибка здесь
+ * дорогая: у ключевого кадра открытыми обязаны остаться десять байт, а не три.
+ * Зашифровав седьмой байт, мы прячем от пакетизатора размер первой партиции —
+ * он режет кадр не по границам, и до собеседника доезжает уже не тот набор
+ * байт. Выглядит это как случайный мусор в трейлере и отказ GCM на каждом
+ * кадре, хотя ключи сошлись и кодек у обоих один.
+ *
+ * В первом байте кадра VP8 младший бит — признак межкадрового предсказания:
+ * ноль означает ключевой кадр. Это часть формата, а не браузерная любезность.
+ */
+export function isVp8KeyFrame(data: Bytes): boolean {
+  return data.length > 0 && (data[0]! & 1) === 0
+}
+
+/**
+ * Похож ли кадр на незашифрованный ключевой кадр VP8.
+ *
+ * У такого кадра на позициях 3–5 стоит сигнатура формата. Если она на месте в
+ * кадре, который не расшифровался, значит собеседник его не шифровал — и
+ * разбираться надо с его стороной, а не с нашими ключами. Отличить это по
+ * ошибке GCM нельзя: она одинакова и для чужого ключа, и для открытого текста.
+ */
+export function looksLikePlainVp8(data: Bytes): boolean {
+  return data.length > 5 && data[3] === 0x9d && data[4] === 0x01 && data[5] === 0x2a
+}
+
+/**
+ * Сколько байт оставить открытыми у конкретного кадра.
+ *
+ * Для VP8 смотрим в сам кадр; для остальных кодеков доверяем метке браузера —
+ * лучшего источника у нас нет, а разметку их кадров мы всё равно не разбираем.
+ */
+export function headerSizeFor(data: Bytes, codec: Codec, isKeyFrame: boolean): number {
+  if (codec === 'vp8') return isVp8KeyFrame(data) ? VIDEO_HEADER.key : VIDEO_HEADER.delta
+  return unencryptedHeaderSize(codec, isKeyFrame)
+}
+
+/**
  * Строит nonce детерминированно: 4 байта id потока + 8 байт счётчика кадров.
  * Случайный nonce здесь недопустим — коллизия под одним ключом в GCM раскрывает
  * ключ аутентификации.
@@ -89,7 +129,7 @@ export interface SplitFrame {
 }
 
 export function splitFrame(data: Bytes, codec: Codec, isKeyFrame: boolean): SplitFrame {
-  const headerSize = unencryptedHeaderSize(codec, isKeyFrame)
+  const headerSize = headerSizeFor(data, codec, isKeyFrame)
   if (data.length < headerSize) {
     throw new FrameFormatError(
       `кадр короче обязательного заголовка ${codec}: ${data.length} < ${headerSize}`,

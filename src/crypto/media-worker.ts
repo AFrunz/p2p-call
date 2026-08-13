@@ -4,6 +4,7 @@ import { ReceiverKeys } from './generations.js'
 import type { DirectionKeys } from './kdf.js'
 import {
   FrameFormatError,
+  looksLikePlainVp8,
   buildNonce,
   packFrame,
   splitFrame,
@@ -145,7 +146,12 @@ function transformer(options: TransformOptions): TransformStream {
         if (error instanceof FrameFormatError && error.plaintext) state.plaintext++
 
         if (state.failed === 1 || state.failed % 200 === 0) {
-          report(id, error instanceof Error ? error.message : String(error))
+          const reason = error instanceof Error ? error.message : String(error)
+          // Сигнатура VP8 в неподдавшемся кадре означает открытый текст, а не
+          // чужой ключ: ошибка GCM для обоих случаев одна и та же.
+          const plain =
+            options.direction === 'recv' && looksLikePlainVp8(new Uint8Array(frame.data))
+          report(id, plain ? `${reason} — кадр не зашифрован (сигнатура VP8 на месте)` : reason)
         }
       }
     },

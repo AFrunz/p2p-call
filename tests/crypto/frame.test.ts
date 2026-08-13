@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   FrameFormatError,
+  headerSizeFor,
+  isVp8KeyFrame,
+  looksLikePlainVp8,
   NONCE_BYTES,
   TAG_BYTES,
   TRAILER_BYTES,
@@ -193,5 +196,57 @@ describe('packFrame / unpackFrame', () => {
 
   it('отвергает заголовок длиннее одного байта: длину некуда записать', () => {
     expect(() => packFrame(bytes(256), bytes(10), 0n, 0)).toThrow(FrameFormatError)
+  })
+
+  it('узнаёт ключевой кадр VP8 по самому кадру, а не по метке браузера', () => {
+    // Младший бит первого байта — признак межкадрового предсказания: ноль
+    // означает ключевой кадр. Это часть формата, а не браузерная любезность.
+    const keyFrame = bytes(20)
+    keyFrame[0] = 0x50
+    const interFrame = bytes(20)
+    interFrame[0] = 0x51
+
+    expect(isVp8KeyFrame(keyFrame)).toBe(true)
+    expect(isVp8KeyFrame(interFrame)).toBe(false)
+  })
+
+  it('оставляет ключевому кадру VP8 десять открытых байт даже без метки type', () => {
+    // Браузер-отправитель может не проставить type. Зашифровав седьмой байт,
+    // мы прячем от пакетизатора размер первой партиции: он режет кадр не по
+    // границам, и до собеседника доезжает уже не тот набор байт.
+    const keyFrame = bytes(40)
+    keyFrame[0] = 0x50
+
+    expect(headerSizeFor(keyFrame, 'vp8', false)).toBe(10)
+    expect(splitFrame(keyFrame, 'vp8', false).header.length).toBe(10)
+  })
+
+  it('межкадровому VP8 оставляет три байта, что бы ни говорила метка', () => {
+    const interFrame = bytes(40)
+    interFrame[0] = 0x51
+
+    expect(headerSizeFor(interFrame, 'vp8', true)).toBe(3)
+  })
+
+  it('для остальных кодеков по-прежнему верит метке: их разметку мы не разбираем', () => {
+    expect(headerSizeFor(bytes(40), 'h264', true)).toBe(10)
+    expect(headerSizeFor(bytes(40), 'opus', false)).toBe(1)
+  })
+
+  it('узнаёт незашифрованный ключевой кадр VP8 по сигнатуре формата', () => {
+    // Ошибка GCM одинакова для чужого ключа и для открытого текста, а чинить
+    // их надо в разных местах.
+    const plain = bytes(40)
+    plain.set([0x9d, 0x01, 0x2a], 3)
+    expect(looksLikePlainVp8(plain)).toBe(true)
+  })
+
+  it('не принимает зашифрованный кадр за открытый', () => {
+    const encrypted = packFrame(bytes(10, 3), bytes(60, 9), 1n, 0)
+    expect(looksLikePlainVp8(encrypted)).toBe(false)
+  })
+
+  it('не читает за границей короткого кадра', () => {
+    expect(looksLikePlainVp8(bytes(3))).toBe(false)
   })
 })
