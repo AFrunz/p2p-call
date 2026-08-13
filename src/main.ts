@@ -435,16 +435,20 @@ function renderExchange(view: SessionView): void {
 
   // Шаг определяется тем, что уже сделано, а не отдельным счётчиком: так
   // возврат назад и обновление кода не сбивают нумерацию.
+  // Коды разошлись — дальше делать нечего, идёт отсчёт. Это отдельное
+  // состояние: обе карточки прячем, чтобы человек не искал, что ещё нажать.
+  const counting = holding || view.phase === 'connecting'
   const step = responder ? (hasOutgoing ? 2 : 1) : hasOutgoing && lastCopied ? 2 : 1
 
   setText('exchange-step-label', t('exchange.step', { current: step, total: 2 }))
   el('progress-2').classList.toggle('is-done', step === 2)
 
-  show('outgoing-block', hasOutgoing && (responder ? step === 2 : step === 1))
-  show('incoming-block', responder ? step === 1 : step === 2)
-  show('exchange-next', step === 1)
-  show('exchange-done', step === 2)
-  placeNextAfter(responder ? 'incoming-block' : 'outgoing-block')
+  show('waiting-block', counting)
+  show('outgoing-block', !counting && hasOutgoing && (responder ? step === 2 : step === 1))
+  show('incoming-block', !counting && (responder ? step === 1 : step === 2))
+  show('exchange-next', !counting && step === 1)
+  show('exchange-done', !counting && step === 2)
+  if (!counting) placeNextAfter(responder ? 'incoming-block' : 'outgoing-block')
 
   setText('exchange-done-text', t(responder ? 'exchange.doneIncoming' : 'exchange.doneOutgoing'))
   show('action-show-outgoing', !responder)
@@ -459,7 +463,7 @@ function renderExchange(view: SessionView): void {
     setText('outgoing-size', t('exchange.size', { count: view.outgoingCode.length }))
   }
 
-  const foot = holding
+  const foot = counting
     ? 'exchange.footRunning'
     : responder
       ? 'exchange.footClock'

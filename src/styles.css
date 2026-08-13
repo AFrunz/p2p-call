@@ -2103,6 +2103,14 @@ svg {
   .controls {
     gap: 8px;
     padding: 9px 11px;
+    /* Панель — пилюля по содержимому: растянутая до краёв, она упирается в
+       рамку экрана и на узких телефонах вылезает за неё. */
+    max-width: 100%;
+    align-self: center;
+  }
+
+  .control--wide {
+    min-width: 0;
   }
 
   /* без подписи кнопка сброса снова круглая */
@@ -2200,5 +2208,35 @@ svg {
 
   .sheet {
     padding: 20px;
+  }
+}
+
+/*
+ * Узкие телефоны: пять кнопок с прежними отступами перестают помещаться в
+ * строку, и панель начинает цеплять края экрана.
+ */
+@media (max-width: 380px) {
+  .controls {
+    gap: 6px;
+    padding: 8px 9px;
+  }
+
+  .control {
+    width: 42px;
+    height: 42px;
+  }
+
+  .control svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .control--wide {
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+
+  .control--danger {
+    width: 44px;
   }
 }

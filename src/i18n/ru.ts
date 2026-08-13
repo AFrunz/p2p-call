@@ -339,7 +339,7 @@ export const ru: Record<string, string> = {
   'call.waitingSelf': 'Здесь вы — включите камеру',
   'call.waitingTitle': 'Собеседника ещё нет',
   'call.waitingNote': 'Звонок начнётся сам, как только он перейдёт по ссылке. Пока можно проверить себя — включить камеру и микрофон.',
-  'call.waitingCopy': 'Скопировать ссылку ещё раз',
+  'call.waitingCopy': 'Скопировать ссылку',
   'call.waitingBadge': 'ждём собеседника',
   'call.peerJoined': 'Собеседник подключился',
   'call.peerCameraOffYet': 'Собеседник ещё не включил камеру',
@@ -355,4 +355,5 @@ export const ru: Record<string, string> = {
   'toast.clipboardEmpty': 'В буфере обмена пусто.',
   'toast.clipboardDenied': 'Браузер не дал прочитать буфер — вставьте код вручную.',
   'exchange.hide': 'скрыть',
+  'exchange.waitingTitle': 'Коды на месте',
 }

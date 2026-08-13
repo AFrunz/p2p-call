@@ -261,21 +261,7 @@
 
         <textarea id="outgoing-code" class="code" readonly rows="6" hidden></textarea>
 
-        <div class="countdown" id="answer-sent" hidden>
-          <div class="countdown__ring" id="countdown-ring">
-            <span id="countdown-value">—</span>
-          </div>
-          <p class="hint" id="countdown-hint"></p>
-        </div>
 
-        <div id="answer-refresh" hidden>
-          <p class="hint" data-i18n="exchange.answerWindow">
-            Не успели — обновите код и отправьте новый.
-          </p>
-          <button class="button" id="action-refresh-answer" data-i18n="exchange.refresh">
-            Обновить код
-          </button>
-        </div>
       </section>
 
       <!-- ---------- Следующий шаг, пока неактивный ---------- -->
@@ -308,6 +294,27 @@
         <button class="button button--primary" id="action-accept" data-i18n="exchange.connect">
           Подключиться
         </button>
+      </section>
+
+      <section class="card card--active" id="waiting-block" hidden>
+        <div class="card__head">
+          <i data-lucide="timer"></i>
+          <strong data-i18n="exchange.waitingTitle">Коды на месте</strong>
+        </div>
+        <div class="countdown" id="answer-sent" hidden>
+          <div class="countdown__ring" id="countdown-ring">
+            <span id="countdown-value">—</span>
+          </div>
+          <p class="hint" id="countdown-hint"></p>
+        </div>
+        <div id="answer-refresh" hidden>
+          <p class="hint" data-i18n="exchange.answerWindow">
+            Не успели — обновите код и отправьте новый.
+          </p>
+          <button class="button" id="action-refresh-answer" data-i18n="exchange.refresh">
+            Обновить код
+          </button>
+        </div>
       </section>
 
       <div class="notice notice--error" id="exchange-error" hidden>
@@ -369,7 +376,7 @@
             включить камеру и микрофон.
           </p>
           <button class="button button--ghost-light" id="action-copy-link-3">
-            <i data-lucide="copy"></i><span data-i18n="call.waitingCopy">Скопировать ссылку ещё раз</span>
+            <i data-lucide="copy"></i><span data-i18n="call.waitingCopy">Скопировать ссылку</span>
           </button>
         </div>
       </div>

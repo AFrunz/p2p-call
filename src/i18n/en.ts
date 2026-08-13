@@ -329,7 +329,7 @@ export const en: Record<string, string> = {
   'call.waitingSelf': 'This is you — turn the camera on',
   'call.waitingTitle': 'Your peer is not here yet',
   'call.waitingNote': 'The call starts by itself as soon as they follow the link. Meanwhile you can check yourself — turn on the camera and microphone.',
-  'call.waitingCopy': 'Copy the link again',
+  'call.waitingCopy': 'Copy the link',
   'call.waitingBadge': 'waiting for your peer',
   'call.peerJoined': 'Your peer has joined',
   'call.peerCameraOffYet': 'Your peer has not turned the camera on yet',
@@ -345,4 +345,5 @@ export const en: Record<string, string> = {
   'toast.clipboardEmpty': 'The clipboard is empty.',
   'toast.clipboardDenied': 'The browser refused to read the clipboard — paste the code by hand.',
   'exchange.hide': 'hide',
+  'exchange.waitingTitle': 'Both codes are in',
 }
