@@ -1667,7 +1667,7 @@ svg {
 .pip__mic {
   position: absolute;
   left: 10px;
-  bottom: 14px;
+  bottom: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1737,6 +1737,14 @@ svg {
 .waiting__off svg {
   width: 32px;
   height: 32px;
+}
+
+/*
+ * Метка и значок микрофона делят один угол, поэтому подпись отступает вправо
+ * ровно на ширину значка: иначе они наезжают друг на друга.
+ */
+.waiting__self:has(> .pip__mic:not([hidden])) .waiting__tag {
+  left: 46px;
 }
 
 .waiting__tag {
