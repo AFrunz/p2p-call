@@ -354,4 +354,5 @@ export const ru: Record<string, string> = {
   'route.pending': 'соединяемся…',
   'toast.clipboardEmpty': 'В буфере обмена пусто.',
   'toast.clipboardDenied': 'Браузер не дал прочитать буфер — вставьте код вручную.',
+  'exchange.hide': 'скрыть',
 }

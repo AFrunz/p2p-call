@@ -41,7 +41,7 @@ import {
   formatResolution,
   formatRoundTrip,
 } from './ui/format.js'
-import { iconIn, renderIcons } from './ui/icons.js'
+import { iconIn, renderIcons, swapIcon } from './ui/icons.js'
 
 const SCREENS = ['screen-home', 'screen-exchange', 'screen-call', 'screen-ended'] as const
 
@@ -183,6 +183,19 @@ async function withBusy(id: string, busyKey: string, action: () => Promise<void>
 function status(rowId: string, textId: string, key: string | null): void {
   show(rowId, key !== null)
   if (key !== null) setText(textId, t(key))
+}
+
+/**
+ * Строка состояния с итогом: крутящийся загрузчик обязан смениться на результат.
+ *
+ * Пока иконка остаётся прежней, строка «сервер отвечает» читается как «всё ещё
+ * проверяем» — противоположно тому, что произошло.
+ */
+function statusResult(rowId: string, textId: string, key: string, icon: string): void {
+  status(rowId, textId, key)
+  const current = iconIn(el(rowId))
+  if (current !== null) swapIcon(current, icon)
+  el(rowId).classList.remove('row--busy')
 }
 
 // ------------------------------------------------- устройства и качество
@@ -448,6 +461,30 @@ function renderExchange(view: SessionView): void {
   setText('exchange-foot-text', t(foot))
 }
 
+/**
+ * Первый шаг для того, кто входит по чужому коду.
+ *
+ * Сессии здесь ещё нет, а значит и перерисовки по её событиям — экран надо
+ * собрать руками, иначе человек видит пустоту.
+ */
+function showJoinStep(): void {
+  setText('exchange-title', t('exchange.joinTitle'))
+  setText('exchange-step-label', t('exchange.step', { current: 1, total: 2 }))
+  el('progress-2').classList.remove('is-done')
+
+  show('outgoing-block', false)
+  show('exchange-done', false)
+  show('incoming-block', true)
+  show('exchange-next', true)
+
+  el<HTMLTextAreaElement>('incoming-code').placeholder = t('exchange.joinPlaceholder')
+  setText('exchange-next-text', t('exchange.nextOutgoing'))
+  setText('exchange-foot-text', t('exchange.footClock'))
+  swapIcon(el('exchange-foot-icon'), 'clock')
+  renderIncoming()
+  renderIcons()
+}
+
 /** Начало и конец кода: середину читать всё равно некому. */
 function envelope(code: string): string {
   return code.length <= 32 ? code : `${code.slice(0, 12)} … ${code.slice(-12)}`
@@ -468,7 +505,7 @@ function renderChecks(): void {
   el('action-status-toggle').dataset['state'] = view.verdict.state
   setText('verdict-title', t(view.verdict.titleKey))
   setText('verdict-note', t(view.verdict.noteKey))
-  swapIcon('verdict-icon', CHECK_ICON[view.verdict.state])
+  swapIcon(el('verdict-icon'), CHECK_ICON[view.verdict.state])
 
   el('checks').replaceChildren(...view.checks.map(checkRow))
 
@@ -482,20 +519,6 @@ function renderChecks(): void {
   renderSteps(view.suggestServer ? 'server' : 'direct')
 
   renderIcons()
-}
-
-/**
- * Меняет иконку у уже отрисованного узла.
- *
- * lucide подменяет `<i data-lucide>` на `<svg>`, и переписывать атрибут на нём
- * бесполезно — иконка остаётся прежней. Поэтому узел заменяется целиком.
- */
-function swapIcon(id: string, name: string): void {
-  const node = el(id)
-  const replacement = document.createElement('i')
-  replacement.setAttribute('data-lucide', name)
-  replacement.id = id
-  node.replaceWith(replacement)
 }
 
 /** Пошаговая подсказка под статусом: что человеку сделать дальше. */
@@ -601,8 +624,9 @@ function newSession(): CallSession {
     pageUrl: `${location.origin}${location.pathname}`,
     connectDelay: settings.connectDelay,
     network,
-    // Захват начинается вместе со звонком: предпросмотра на главном экране
-    // больше нет, и держать камеру включённой до разговора незачем.
+    // Разрешение на камеру и микрофон спрашиваем уже на экране звонка: индикатор
+    // записи, зажёгшийся на главном экране, пугает раньше времени.
+    deferCapture: true,
     stream: null,
   })
 
@@ -711,15 +735,14 @@ function onPhase(view: SessionView): void {
     case 'awaiting-exchange':
       // Со своим сервером обмена кодами нет вовсе: ссылка уже создана, и ждать
       // собеседника человек должен в звонке, где может проверить себя.
-      if (view.inviteLink !== null) {
-        attachStream('waiting-video', session?.media.local ?? null)
-        void fillDevices()
-        renderQualityPanel()
-        screen('screen-call')
-        break
-      }
       setText('exchange-title', t('exchange.title'))
       screen('screen-exchange')
+      break
+
+    case 'awaiting-peer':
+      // Ссылка готова: человек ждёт собеседника прямо в звонке и может
+      // проверить себя, пока тот идёт по ссылке.
+      void enterCall(view)
       break
 
     case 'connected': {
@@ -755,6 +778,29 @@ function onPhase(view: SessionView): void {
       showEnded(view)
       break
   }
+}
+
+/**
+ * Переводит на экран звонка и только там просит устройства.
+ *
+ * Камера и микрофон включаются выключенными: войти в разговор молча — это
+ * осознанный выбор, а не забытая настройка.
+ */
+async function enterCall(view: SessionView): Promise<void> {
+  screen('screen-call')
+  attachStream('waiting-video', session?.media.local ?? null)
+  attachStream('local-video', session?.media.local ?? null)
+
+  const stream = session?.media.local
+  if (stream !== null && stream !== undefined && stream.getTracks().length === 0) {
+    for (const kind of ['audio', 'video'] as const) await acquireTrack(kind, stream)
+    attachStream('waiting-video', stream)
+    attachStream('local-video', stream)
+  }
+
+  await fillDevices()
+  renderQualityPanel()
+  renderCall(view)
 }
 
 /** Короткое уведомление о том, что собеседник вошёл в комнату. */
@@ -1037,9 +1083,18 @@ function wire(): void {
     if (!check.ok) return status('server-check-status', 'server-check-text', check.error.key)
 
     void withBusy('action-check-server', 'settings.checking', async () => {
+      el('server-check-status').classList.add('row--busy')
+      const spinner = iconIn(el('server-check-status'))
+      if (spinner !== null) swapIcon(spinner, 'loader-circle')
       status('server-check-status', 'server-check-text', 'settings.checking')
+
       const result = await probeSignaling(raw.trim())
-      status('server-check-status', 'server-check-text', reachabilityKey(result))
+      statusResult(
+        'server-check-status',
+        'server-check-text',
+        reachabilityKey(result),
+        result === 'ok' ? 'circle-check' : 'circle-x',
+      )
     })
   })
   on('action-remove-server', 'click', () => {
@@ -1098,17 +1153,17 @@ function wire(): void {
     setDisabled('action-accept', false, '')
     el<HTMLTextAreaElement>('outgoing-code').value = ''
     el<HTMLTextAreaElement>('incoming-code').value = ''
-    show('outgoing-block', false)
-    setText('exchange-title', t('exchange.joinTitle'))
-    setText('exchange-hint', t('exchange.joinHint'))
     screen('screen-exchange')
+    showJoinStep()
   })
 
   on('action-paste-code', 'click', () => void pasteCode())
   on('action-show-outgoing', 'click', () => {
     const box = el<HTMLTextAreaElement>('outgoing-code')
-    box.hidden = !box.hidden
-    if (!box.hidden) box.select()
+    const opening = box.hidden
+    show('outgoing-code', opening)
+    setText('action-show-outgoing', t(opening ? 'exchange.hide' : 'exchange.show'))
+    if (opening) box.select()
   })
   on('action-copy-link-3', 'click', () => void copy(inviteLink, 'toast.linkCopied'))
 
@@ -1182,6 +1237,8 @@ function wire(): void {
   on('action-start-session', 'click', () => {
     void withBusy('action-start-session', 'server.starting', async () => {
       const created = newSession()
+      // Сначала ссылка: она переводит человека в комнату ожидания, и уже там
+      // спрашиваются камера с микрофоном.
       await created.prepare()
       await created.createLink()
     })

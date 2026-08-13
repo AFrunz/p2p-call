@@ -344,4 +344,5 @@ export const en: Record<string, string> = {
   'route.pending': 'connecting…',
   'toast.clipboardEmpty': 'The clipboard is empty.',
   'toast.clipboardDenied': 'The browser refused to read the clipboard — paste the code by hand.',
+  'exchange.hide': 'hide',
 }

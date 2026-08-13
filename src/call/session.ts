@@ -173,11 +173,19 @@ export interface SessionOptions {
    */
   connectDelay?: number
   /**
-   * Уже захваченный поток с главного экрана.
+   * Не запрашивать камеру и микрофон при подготовке.
    *
-   * Без него сессия просит камеру второй раз: пользователь ждёт лишние
-   * секунды, а первый поток продолжает держать устройство. Переданный поток
-   * сессия не останавливает — он принадлежит вызывающему коду.
+   * Разрешение спрашивается там, где человек уже видит звонок: индикатор
+   * камеры, зажёгшийся на главном экране, пугает раньше времени. Дорожки
+   * подставляются позже через attachTrack — трансиверы для этого создаются
+   * заранее, поэтому нового обмена кодами не требуется.
+   */
+  deferCapture?: boolean
+
+  /**
+   * Уже захваченный поток.
+   *
+   * Переданный поток сессия не останавливает — он принадлежит вызывающему коду.
    */
   stream?: MediaStream | null
   /**
@@ -320,7 +328,12 @@ export class CallSession {
       const existing = this.options.stream ?? null
       let notice: Message | null = null
 
-      if (existing !== null) {
+      if (this.options.deferCapture === true && existing === null) {
+        // Пустой поток: трансиверы всё равно создадутся, а дорожки приедут
+        // позже — когда человек нажмёт микрофон или камеру уже в звонке.
+        this.localStream = new MediaStream()
+        this.ownsStream = true
+      } else if (existing !== null) {
         // Готовый поток приходит редко — например, из ожидания собеседника,
         // где камеру уже включили. Переспрашивать разрешение незачем.
         this.localStream = existing
@@ -480,14 +493,20 @@ export class CallSession {
     }
   }
 
-  /** Подключается по чужой ссылке. */
+  /**
+   * Подключается по ссылке.
+   *
+   * Ссылка одна на обоих: роль назначает сервер по порядку прихода. Кто открыл
+   * первым — ждёт в комнате, второй сразу начинает соединение. Поэтому фазу
+   * ставим по факту, а не заранее.
+   */
   async joinLink(url: string): Promise<void> {
     const invite = parseInviteLink(url)
     if (invite === null) return this.fail(message('session.badLink'))
 
     try {
       this.invite = invite
-      this.patch({ phase: 'connecting' })
+      this.patch({ phase: 'awaiting-peer', inviteLink: url })
       await this.openSignaling(invite)
     } catch (error) {
       this.fail(describe(error))
@@ -530,7 +549,8 @@ export class CallSession {
       this.channel = this.connection!.createDataChannel('control', { ordered: true })
       this.bindChannel(this.channel)
     }
-    this.patch({ role })
+    // Отвечающий приходит вторым: собеседник уже в комнате, ждать некого.
+    this.patch({ role, ...(role === 'responder' ? { peerPresent: true } : {}) })
   }
 
   private async onPeerJoined(): Promise<void> {
