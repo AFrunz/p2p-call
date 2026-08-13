@@ -5,16 +5,20 @@ import type { Envelope, Role } from './types.js'
 export const MAGIC = 0x5032 // "P2"
 
 /** Версия формата кода. Несовпадение — повод честно сказать «обнови вкладку». */
-export const FORMAT_VERSION = 3
+export const FORMAT_VERSION = 4
 
 /** Размер сырого публичного ключа ECDH P-256. */
 export const PUBLIC_KEY_BYTES = 65
 
 /** magic(2) + version(1) + role(1) + возможности(1) + старт(8) + pubkey(65) + длина SDP(4). */
-const HEADER_BYTES = 2 + 1 + 1 + 1 + 8 + PUBLIC_KEY_BYTES + 4
+const HEADER_BYTES = 2 + 1 + 1 + 1 + 8 + 2 + PUBLIC_KEY_BYTES + 4
 
 /** Бит возможностей: сторона умеет шифровать кадры. */
 const FLAG_FRAME_ENCRYPTION = 1
+
+export const MIN_HOLD_SECONDS = 10
+export const MAX_HOLD_SECONDS = 3600
+export const DEFAULT_HOLD_SECONDS = 60
 
 const ROLE_CODES: Record<Role, number> = { initiator: 0, responder: 1 }
 const ROLE_BY_CODE: Record<number, Role> = { 0: 'initiator', 1: 'responder' }
@@ -66,6 +70,18 @@ async function inflate(data: Bytes): Promise<Bytes> {
   return pump(new DecompressionStream('deflate-raw'), data)
 }
 
+/**
+ * Загоняет окно на перенос кода в разумные рамки.
+ *
+ * Значение приходит от собеседника, поэтому ноль или сутки принимать нельзя:
+ * первое начнёт проверку раньше, чем код доедет, второе оставит человека
+ * смотреть на «ожидание» без конца.
+ */
+function clampHold(seconds: number): number {
+  if (!Number.isFinite(seconds)) return DEFAULT_HOLD_SECONDS
+  return Math.min(MAX_HOLD_SECONDS, Math.max(MIN_HOLD_SECONDS, Math.round(seconds)))
+}
+
 /** Упаковывает конверт в компактный код: бинарь -> deflate -> base64url. */
 export async function encodeEnvelope(envelope: Envelope): Promise<string> {
   if (envelope.publicKey.length !== PUBLIC_KEY_BYTES) {
@@ -85,8 +101,9 @@ export async function encodeEnvelope(envelope: Envelope): Promise<string> {
   view.setUint8(4, envelope.frameEncryption ? FLAG_FRAME_ENCRYPTION : 0)
   // float64 держит unix-время без потерь и не упрётся в 2038 год.
   view.setFloat64(5, envelope.startAt)
-  raw.set(envelope.publicKey, 13)
-  view.setUint32(13 + PUBLIC_KEY_BYTES, sdp.length)
+  view.setUint16(13, clampHold(envelope.holdSeconds))
+  raw.set(envelope.publicKey, 15)
+  view.setUint32(15 + PUBLIC_KEY_BYTES, sdp.length)
   raw.set(sdp, HEADER_BYTES)
 
   return toBase32(await deflate(raw))
@@ -130,8 +147,9 @@ export async function decodeEnvelope(code: string): Promise<Envelope> {
 
   const flags = view.getUint8(4)
   const startAt = view.getFloat64(5)
-  const publicKey = raw.slice(13, 13 + PUBLIC_KEY_BYTES)
-  const sdpLength = view.getUint32(13 + PUBLIC_KEY_BYTES)
+  const holdSeconds = clampHold(view.getUint16(13))
+  const publicKey = raw.slice(15, 15 + PUBLIC_KEY_BYTES)
+  const sdpLength = view.getUint32(15 + PUBLIC_KEY_BYTES)
   if (raw.length !== HEADER_BYTES + sdpLength) {
     throw new CodeFormatError('код обрезан: SDP не совпал с заявленной длиной', 'truncated')
   }
@@ -143,6 +161,7 @@ export async function decodeEnvelope(code: string): Promise<Envelope> {
     publicKey,
     frameEncryption: (flags & FLAG_FRAME_ENCRYPTION) !== 0,
     startAt: Number.isFinite(startAt) ? startAt : 0,
+    holdSeconds,
     sdp,
   }
 }

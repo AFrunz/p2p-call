@@ -17,7 +17,7 @@ import { decodeMessage, encodeMessage } from '../protocol/messages.js'
 import type { ControlMessage } from '../protocol/messages.js'
 import { buildIceServers } from '../net/turn.js'
 import type { NetworkReport } from '../net/probe.js'
-import { FORMAT_VERSION, decodeEnvelope, encodeEnvelope } from '../signaling/codec.js'
+import { DEFAULT_HOLD_SECONDS, FORMAT_VERSION, decodeEnvelope, encodeEnvelope } from '../signaling/codec.js'
 import { CodeFormatError } from '../signaling/codec.js'
 import type { Envelope } from '../signaling/types.js'
 
@@ -150,7 +150,12 @@ export interface SessionOptions {
   signalingServer?: string | null
   /** Базовый адрес страницы для сборки ссылки. */
   pageUrl: string
-  /** Через сколько секунд после готовности ответа стороны начнут проверку. */
+  /**
+   * Сколько секунд даётся на перенос кода.
+   *
+   * Учитывается у того, кто создаёт сессию: он выбирает, как код поедет.
+   * Отвечающий берёт это число из самого кода.
+   */
   connectDelay?: number
   /**
    * Уже захваченный поток с главного экрана.
@@ -212,6 +217,12 @@ export class CallSession {
   private encryptionReason: EncryptionReason = 'pending'
   /** Что собеседник сказал про свой слой шифрования. null — ещё не говорил. */
   private peerAttachedEncryption: boolean | null = null
+  /**
+   * Окно на перенос кода. У создателя — из его настроек, у отвечающего — из
+   * полученного кода: разъехавшиеся окна означали бы, что одна сторона начнёт
+   * проверку, пока вторая ещё держит кандидатов.
+   */
+  private holdSeconds = DEFAULT_HOLD_SECONDS
   private keys: MediaKeys | null = null
 
   private localStream: MediaStream | null = null
@@ -236,7 +247,11 @@ export class CallSession {
   /** Соединение хоть раз состоялось: обрыв после этого — не «не удалось подключиться». */
   private wasConnected = false
 
-  constructor(private options: SessionOptions) {}
+  constructor(private options: SessionOptions) {
+    // Своё окно нужно только создателю сессии; отвечающий перезапишет его
+    // числом из кода, как только код разберётся.
+    this.holdSeconds = options.connectDelay ?? DEFAULT_HOLD_SECONDS
+  }
 
   /**
    * Сводка по требованию: `__p2p.stats()` в консоли.
@@ -383,6 +398,7 @@ export class CallSession {
         const connection = this.connection!
 
         this.pendingOffer = envelope.sdp
+        this.holdSeconds = envelope.holdSeconds
 
         // Кандидатов собеседника придерживаем: без них парам не из чего
         // строиться, ICE не начинает проверку и не сдаётся через полминуты,
@@ -393,9 +409,7 @@ export class CallSession {
 
         // Только теперь: до удалённого описания addIceCandidate падает, и
         // капельница глохла на первом же вызове, ни разу не сработав.
-        if (held !== null) {
-          this.scheduleRelease(Date.now() + (this.options.connectDelay ?? 60) * 1000)
-        }
+        if (held !== null) this.scheduleRelease(Date.now() + this.holdSeconds * 1000)
         await connection.setLocalDescription(await connection.createAnswer())
         await waitForGathering(connection)
 
@@ -834,6 +848,7 @@ export class CallSession {
       publicKey: await exportPublicKey(this.keyPair.publicKey),
       frameEncryption: detectTransformSupport() !== 'none',
       startAt: this.view.startAt ?? 0,
+      holdSeconds: this.holdSeconds,
       sdp,
     })
 

@@ -11,6 +11,7 @@ import {
   toBase32,
   toBase64Url,
 } from '../../src/signaling/codec.js'
+import { MAX_HOLD_SECONDS, MIN_HOLD_SECONDS } from '../../src/signaling/codec.js'
 import type { Bytes } from '../../src/bytes.js'
 import type { Envelope } from '../../src/signaling/types.js'
 import { OFFER_SDP } from '../fixtures/sdp.js'
@@ -29,6 +30,7 @@ function envelope(patch: Partial<Envelope> = {}): Envelope {
     publicKey: publicKey(),
     frameEncryption: true,
     startAt: 0,
+    holdSeconds: 60,
     sdp: OFFER_SDP,
     ...patch,
   }
@@ -201,5 +203,23 @@ describe('encodeEnvelope / decodeEnvelope', () => {
     const dirty = `  ${code.slice(0, 20)}\n${code.slice(20)}  `
     const decoded = await decodeEnvelope(dirty)
     expect(decoded.sdp).toBe(OFFER_SDP)
+  })
+
+  it('переносит окно на перенос кода: его задаёт создатель сессии', async () => {
+    const code = await encodeEnvelope(envelope({ holdSeconds: 300 }))
+    expect((await decodeEnvelope(code)).holdSeconds).toBe(300)
+  })
+
+  it('загоняет окно в разумные рамки — число приходит от собеседника', async () => {
+    // Ноль начал бы проверку раньше, чем код доедет, а сутки оставили бы
+    // человека смотреть на «ожидание» без конца.
+    for (const [given, expected] of [
+      [0, MIN_HOLD_SECONDS],
+      [5, MIN_HOLD_SECONDS],
+      [100_000, MAX_HOLD_SECONDS],
+    ] as const) {
+      const code = await encodeEnvelope(envelope({ holdSeconds: given }))
+      expect((await decodeEnvelope(code)).holdSeconds, String(given)).toBe(expected)
+    }
   })
 })
