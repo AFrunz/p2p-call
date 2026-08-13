@@ -270,11 +270,16 @@
           <strong id="outgoing-label" data-i18n="exchange.yourCode">Ваш код готов</strong>
         </div>
 
-        <div class="envelope">
+        <div class="envelope" id="outgoing-envelope">
           <span class="envelope__code" id="outgoing-preview"></span>
           <span class="envelope__size">
             <i data-lucide="file-lock-2"></i><span id="outgoing-size"></span>
           </span>
+        </div>
+
+        <div class="envelope envelope--loading" id="outgoing-loading" hidden>
+          <i data-lucide="loader-circle"></i>
+          <span id="outgoing-loading-text"></span>
         </div>
 
         <p class="hint" data-i18n="exchange.sendHint">
@@ -369,6 +374,27 @@
         <i data-lucide="loader-circle"></i>
         <span id="exchange-status-text"></span>
       </div>
+    </main>
+
+    <!-- ================= Подключаемся ================= -->
+    <main class="app app--narrow" id="screen-connecting" hidden>
+      <section class="connecting">
+        <div class="countdown__ring countdown__ring--large" id="connecting-ring">
+          <span id="connecting-value">—</span>
+        </div>
+        <h1 data-i18n="exchange.waitingTitle">Коды на месте</h1>
+        <p class="muted" data-i18n="connecting.note">
+          Обе стороны начнут подключение одновременно, когда время выйдет.
+          Длительность отсчёта задаётся в настройках.
+        </p>
+        <p class="foot">
+          <i data-lucide="info"></i>
+          <span data-i18n="connecting.foot">
+            Дождитесь конца отсчёта — раньше подключение не начнётся. Вкладку закрывать нельзя,
+            свернуть можно.
+          </span>
+        </p>
+      </section>
     </main>
 
     <!-- ================= Звонок ================= -->

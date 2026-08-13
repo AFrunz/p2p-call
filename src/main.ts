@@ -43,7 +43,13 @@ import {
 } from './ui/format.js'
 import { iconIn, renderIcons, swapIcon } from './ui/icons.js'
 
-const SCREENS = ['screen-home', 'screen-exchange', 'screen-call', 'screen-ended'] as const
+const SCREENS = [
+  'screen-home',
+  'screen-exchange',
+  'screen-connecting',
+  'screen-call',
+  'screen-ended',
+] as const
 
 let settings: Settings = loadSettings(localStorage)
 let locale: Locale = settings.locale ?? detectLocale(navigator.languages)
@@ -457,13 +463,17 @@ function renderExchange(view: SessionView): void {
   // Отвечающий обязан видеть свой ответный код рядом с отсчётом: без него
   // собеседник не подключится, а время уже идёт. Создающий на этом шаге уже
   // всё отдал и всё принял — ему остаётся только ждать.
-  const showOutgoing = hasOutgoing && (responder || step === 1)
+  const showOutgoing = responder ? step === 2 : step === 1
   const showIncoming = !counting && (responder ? step === 1 : step === 2)
 
   setText('exchange-step-label', t('exchange.step', { current: step, total: 2 }))
   el('progress-2').classList.toggle('is-done', step === 2)
 
-  show('waiting-block', counting)
+  // Создающему на этом шаге делать нечего — отдельный экран с крупным кольцом.
+  // Отвечающему нельзя: у него рядом лежит код, который ещё надо отправить.
+  if (counting && !responder) screen('screen-connecting')
+
+  show('waiting-block', counting && responder)
   show('outgoing-block', showOutgoing)
   show('incoming-block', showIncoming)
   show('exchange-next', !counting && step === 1)
@@ -483,6 +493,7 @@ function renderExchange(view: SessionView): void {
   setText('exchange-next-text', t(responder ? 'exchange.nextOutgoing' : 'exchange.nextIncoming'))
   setText('outgoing-label', t(responder ? 'exchange.answerTitle' : 'exchange.yourCode'))
 
+  setLoadingCode(showOutgoing && !hasOutgoing)
   if (view.outgoingCode !== null) {
     setText('outgoing-preview', envelope(view.outgoingCode))
     setText('outgoing-size', t('exchange.size', { count: view.outgoingCode.length }))
@@ -510,13 +521,27 @@ function showExchangePreparing(): void {
   setText('exchange-step-label', t('exchange.step', { current: 1, total: 2 }))
   el('progress-2').classList.remove('is-done')
 
-  for (const id of ['outgoing-block', 'incoming-block', 'exchange-done', 'exchange-next', 'waiting-block', 'outgoing-code']) {
+  for (const id of ['incoming-block', 'exchange-done', 'exchange-next', 'waiting-block', 'outgoing-code']) {
     show(id, false)
   }
+
+  // Карточка на месте с самого начала, только вместо кода в ней крутилка:
+  // пустой экран с бегущей строкой внизу читается как «ничего не работает».
+  setText('outgoing-label', t('exchange.yourCode'))
+  show('outgoing-block', true)
+  setLoadingCode(true)
+
   setText('exchange-foot-text', t('exchange.footNoRush'))
   swapIcon(el('exchange-foot-icon'), 'info')
+}
 
-  status('exchange-status', 'exchange-status-text', 'status.preparing')
+/** Код ещё собирается: копировать нечего, и кнопка это показывает. */
+function setLoadingCode(loading: boolean): void {
+  show('outgoing-envelope', !loading)
+  show('outgoing-loading', loading)
+  setText('outgoing-loading-text', t('exchange.building'))
+  setDisabled('action-copy-code', loading, '')
+  renderIcons()
 }
 
 /**
@@ -1082,8 +1107,13 @@ function renderCountdown(startAt: number | null, holdSeconds: number): void {
 
   const tick = () => {
     const left = Math.max(0, Math.round((startAt - Date.now()) / 1000))
-    setText('countdown-value', left === 0 ? '—' : clock(left))
-    el('countdown-ring').style.setProperty('--progress', String(left / total))
+    for (const [value, ring] of [
+      ['countdown-value', 'countdown-ring'],
+      ['connecting-value', 'connecting-ring'],
+    ] as const) {
+      setText(value, left === 0 ? '—' : clock(left))
+      el(ring).style.setProperty('--progress', String(left / total))
+    }
     setText(
       'countdown-hint',
       left === 0 ? t('exchange.countdownNow') : t('exchange.countdown', { value: clock(left) }),
@@ -1247,9 +1277,7 @@ function wire(): void {
       showExchangePreparing()
 
       await created.prepare()
-      status('exchange-status', 'exchange-status-text', 'status.gathering')
       await created.createCode()
-      status('exchange-status', 'exchange-status-text', null)
     })
   })
 

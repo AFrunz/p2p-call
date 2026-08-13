@@ -1158,6 +1158,59 @@ svg {
 }
 
 /* вырезка внутри кольца — цвета подложки блока */
+/* Отсчёт как отдельный экран: кольцо крупное, вокруг только пояснения. */
+.connecting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex: 1;
+  text-align: center;
+}
+
+.connecting h1 {
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.connecting p {
+  max-width: 420px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.connecting .foot {
+  justify-content: center;
+  text-align: left;
+}
+
+.countdown__ring--large {
+  width: 148px;
+  height: 148px;
+  font-size: 30px;
+  background: conic-gradient(var(--accent) calc(var(--progress) * 360deg), #ffffff14 0);
+}
+
+.countdown__ring--large::before {
+  inset: 12px;
+  background: var(--bg);
+}
+
+/* Пока код собирается, вместо него крутилка: копировать ещё нечего. */
+.envelope--loading {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.envelope--loading svg {
+  width: 16px;
+  height: 16px;
+}
+
 .countdown__ring::before {
   content: '';
   position: absolute;

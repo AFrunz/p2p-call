@@ -346,4 +346,7 @@ export const en: Record<string, string> = {
   'toast.clipboardDenied': 'The browser refused to read the clipboard — paste the code by hand.',
   'exchange.hide': 'hide',
   'exchange.waitingTitle': 'Both codes are in',
+  'connecting.note': 'Both sides start connecting at the same moment, when the time runs out. The countdown length is set in the settings.',
+  'connecting.foot': 'Wait for the countdown to finish — nothing starts earlier. Do not close the tab; minimising is fine.',
+  'exchange.building': 'Building the code…',
 }
