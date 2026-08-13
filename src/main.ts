@@ -674,7 +674,10 @@ function render(view: SessionView): void {
   show('answer-refresh', !holding && view.role === 'responder' && view.outgoingCode !== null)
   renderCountdown(view.startAt)
   renderExchange(view)
-  if (view.inviteLink !== null && view.inviteLink !== inviteLink) {
+  // Закончившийся звонок ссылку больше не отдаёт: иначе очистка на выходе
+  // тут же откатывается очередной перерисовкой умирающей сессии.
+  const alive = view.phase !== 'ended' && view.phase !== 'failed'
+  if (alive && view.inviteLink !== null && view.inviteLink !== inviteLink) {
     inviteLink = view.inviteLink
     el<HTMLInputElement>('invite-link').value = inviteLink
     renderServerPanel()
@@ -806,6 +809,27 @@ async function enterCall(view: SessionView): Promise<void> {
   await fillDevices()
   renderQualityPanel()
   renderCall(view)
+}
+
+/**
+ * Забывает закончившийся звонок.
+ *
+ * Ссылка-приглашение живёт ровно одну сессию: комната по ней уже занята
+ * прошлым разговором, а вернувшись на вкладку сервера, человек ждёт кнопку
+ * «начать», а не чужой адрес из прошлого. Коды в полях — по той же причине.
+ */
+function forgetSession(): void {
+  session = null
+  lastPhase = null
+  lastCopied = false
+
+  inviteLink = ''
+  el<HTMLInputElement>('invite-link').value = ''
+  el<HTMLTextAreaElement>('outgoing-code').value = ''
+  el<HTMLTextAreaElement>('incoming-code').value = ''
+  show('outgoing-code', false)
+
+  renderServerPanel()
 }
 
 /** Короткое уведомление о том, что собеседник вошёл в комнату. */
@@ -1170,8 +1194,7 @@ function wire(): void {
 
   on('action-exchange-back', 'click', () => {
     session?.hangUp()
-    session = null
-    lastPhase = null
+    forgetSession()
     screen('screen-home')
   })
 
@@ -1260,8 +1283,7 @@ function wire(): void {
   })
 
   on('action-back-home', 'click', () => {
-    session = null
-    lastPhase = null
+    forgetSession()
     screen('screen-home')
     // Заодно открываем ту вкладку, с которой звонок и начинался: без сервера
     // это обмен кодами, с сервером — ссылка.
@@ -1269,7 +1291,9 @@ function wire(): void {
   })
   on('action-hangup', 'click', () => {
     session?.hangUp()
-    session = null
+    // Экран завершения покажет render по фазе; ссылку и коды забываем сразу,
+    // чтобы следующая сессия начиналась с чистой вкладки сервера.
+    forgetSession()
   })
 
   window.addEventListener('beforeunload', () => session?.hangUp())
