@@ -468,7 +468,7 @@ function renderChecks(): void {
   el('action-status-toggle').dataset['state'] = view.verdict.state
   setText('verdict-title', t(view.verdict.titleKey))
   setText('verdict-note', t(view.verdict.noteKey))
-  el<HTMLElement>('verdict-icon').setAttribute('data-lucide', CHECK_ICON[view.verdict.state])
+  swapIcon('verdict-icon', CHECK_ICON[view.verdict.state])
 
   el('checks').replaceChildren(...view.checks.map(checkRow))
 
@@ -482,6 +482,20 @@ function renderChecks(): void {
   renderSteps(view.suggestServer ? 'server' : 'direct')
 
   renderIcons()
+}
+
+/**
+ * Меняет иконку у уже отрисованного узла.
+ *
+ * lucide подменяет `<i data-lucide>` на `<svg>`, и переписывать атрибут на нём
+ * бесполезно — иконка остаётся прежней. Поэтому узел заменяется целиком.
+ */
+function swapIcon(id: string, name: string): void {
+  const node = el(id)
+  const replacement = document.createElement('i')
+  replacement.setAttribute('data-lucide', name)
+  replacement.id = id
+  node.replaceWith(replacement)
 }
 
 /** Пошаговая подсказка под статусом: что человеку сделать дальше. */
@@ -587,8 +601,8 @@ function newSession(): CallSession {
     pageUrl: `${location.origin}${location.pathname}`,
     connectDelay: settings.connectDelay,
     network,
-    // Захват теперь начинается вместе со звонком: предпросмотра на главном
-    // экране больше нет, и держать камеру включённой до разговора незачем.
+    // Захват начинается вместе со звонком: предпросмотра на главном экране
+    // больше нет, и держать камеру включённой до разговора незачем.
     stream: null,
   })
 
@@ -905,14 +919,27 @@ function clock(seconds: number): string {
 }
 
 /** Обратный отсчёт до общего старта проверки. */
+/**
+ * Обратный отсчёт до общего момента старта.
+ *
+ * Кольцо, а не строка: человеку важно не точное число, а сколько осталось —
+ * взгляда на заполненность хватает, чтобы решить, успевает он отправить код
+ * или пора обновлять.
+ */
 function renderCountdown(startAt: number | null): void {
   if (countdownHandle !== null) clearInterval(countdownHandle)
   countdownHandle = null
 
   if (startAt === null) return
 
+  // Полная длительность известна только в начале: дальше считаем от неё, иначе
+  // кольцо после перерисовки прыгнет на полный круг.
+  const total = Math.max(1, Math.round((startAt - Date.now()) / 1000))
+
   const tick = () => {
     const left = Math.max(0, Math.round((startAt - Date.now()) / 1000))
+    setText('countdown-value', left === 0 ? '—' : clock(left))
+    el('countdown-ring').style.setProperty('--progress', String(left / total))
     setText(
       'countdown-hint',
       left === 0 ? t('exchange.countdownNow') : t('exchange.countdown', { value: clock(left) }),
