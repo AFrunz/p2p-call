@@ -556,15 +556,6 @@ svg {
   word-break: break-all;
 }
 
-.qr {
-  display: block;
-  margin: 0 auto;
-  padding: 10px;
-  border-radius: 10px;
-  background: #fff;
-  max-width: 100%;
-}
-
 /* ================= Главный экран / общий каркас ================= */
 .app {
   display: flex;

@@ -125,11 +125,11 @@ describe('encodeEnvelope / decodeEnvelope', () => {
     expect(decoded.role).toBe('responder')
   })
 
-  it('сжимает реальный SDP до размера, влезающего в QR-код', async () => {
+  it('сжимает реальный SDP до размера, пригодного для пересылки', async () => {
     const code = await encodeEnvelope(envelope())
     // Порог с запасом: base32 длиннее base64 примерно на четверть, но зато
     // переживает пересылку через что угодно. За ростом всё равно следим —
-    // иначе сканирование QR с телефона станет мучением.
+    // иначе код не пролезет через мессенджер одним сообщением.
     expect(code.length).toBeLessThan(1500)
   })
 

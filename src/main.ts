@@ -1,4 +1,3 @@
-import QRCode from 'qrcode'
 import { CallSession } from './call/session.js'
 import type { SessionView } from './call/session.js'
 import { describeMissing, listDevices, requestMedia, stopStream } from './call/media.js'
@@ -152,19 +151,6 @@ async function copy(text: string, messageKey: string): Promise<void> {
     toast(t(messageKey))
   } catch {
     toast(t('toast.copyFailed'))
-  }
-}
-
-/** Повторное нажатие прячет код обратно — это переключатель, а не одноразовая кнопка. */
-async function toggleQr(canvasId: string, text: string): Promise<void> {
-  const canvas = el<HTMLCanvasElement>(canvasId)
-  if (!canvas.hidden) return show(canvas, false)
-
-  try {
-    await QRCode.toCanvas(canvas, text, { margin: 1, width: 260, errorCorrectionLevel: 'L' })
-    show(canvas, true)
-  } catch {
-    toast(t('toast.qrFailed'))
   }
 }
 
@@ -1016,9 +1002,6 @@ function wire(): void {
   on('action-copy-code', 'click', () => {
     void copy(el<HTMLTextAreaElement>('outgoing-code').value, 'toast.codeCopied')
   })
-  on('action-qr-code', 'click', () => {
-    void toggleQr('qr-code-canvas', el<HTMLTextAreaElement>('outgoing-code').value)
-  })
 
   on('action-add-server', 'click', openSettings)
   on('action-edit-server', 'click', openSettings)
@@ -1033,7 +1016,6 @@ function wire(): void {
   for (const id of ['action-copy-link', 'action-copy-link-2']) {
     on(id, 'click', () => void copy(inviteLink, 'toast.linkCopied'))
   }
-  on('action-qr-link', 'click', () => void toggleQr('qr-canvas', inviteLink))
   on('action-join-own-link', 'click', () => {
     void withBusy('action-join-own-link', 'link.joining', async () => {
       await session?.joinLink(inviteLink)

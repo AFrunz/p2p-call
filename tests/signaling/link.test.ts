@@ -62,7 +62,7 @@ describe('buildInviteLink', () => {
     expect(link.split('#')).toHaveLength(2)
   })
 
-  it('умещается в длину, пригодную для мессенджера и QR', () => {
+  it('умещается в длину, пригодную для мессенджера', () => {
     expect(buildInviteLink(BASE, generateInvite(SERVER)).length).toBeLessThan(300)
   })
 

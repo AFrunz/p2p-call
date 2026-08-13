@@ -227,7 +227,6 @@ export const ru: Record<string, string> = {
   'toast.linkCopied': 'Ссылка скопирована.',
   'toast.copyFailed': 'Скопируйте вручную: буфер обмена недоступен.',
   'toast.pasteCode': 'Вставьте код собеседника.',
-  'toast.qrFailed': 'Не удалось построить QR — слишком длинный код.',
   'toast.settingsSaved': 'Настройки сохранены.',
   'toast.savedDeviceGone': 'Сохранённое устройство больше не подключено — взяли то, что есть.',
   'notice.noFrameEncryption':

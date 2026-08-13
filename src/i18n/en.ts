@@ -217,7 +217,6 @@ export const en: Record<string, string> = {
   'toast.linkCopied': 'Link copied.',
   'toast.copyFailed': 'Copy it by hand: the clipboard is unavailable.',
   'toast.pasteCode': "Paste the other person's code.",
-  'toast.qrFailed': 'Could not build the QR code — it is too long.',
   'toast.settingsSaved': 'Settings saved.',
   'toast.savedDeviceGone': 'The saved device is no longer connected — we took what is available.',
   'notice.noFrameEncryption':

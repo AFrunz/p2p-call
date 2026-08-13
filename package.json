@@ -13,13 +13,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "@types/qrcode": "^1.5.6",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "lucide": "^0.468.0",
-    "qrcode": "^1.5.4"
+    "lucide": "^0.468.0"
   }
 }
