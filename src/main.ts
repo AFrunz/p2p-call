@@ -870,6 +870,9 @@ function renderCall(view: SessionView): void {
   el('badge-route').classList.toggle('badge--warn', waiting)
   show('call-waiting', waiting)
   show('badge-timer', !waiting)
+  // В ожидании своё видео уже занимает середину экрана — маленькое окно в углу
+  // показывало бы то же самое второй раз.
+  show('pip', !waiting)
 
   // Смена слоя шифрования — момент, когда декодер получает кадры по старым
   // правилам и выдаёт их резким щелчком прямо в наушники.
