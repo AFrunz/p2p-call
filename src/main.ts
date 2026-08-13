@@ -363,9 +363,10 @@ function renderChecks(): void {
 
   el('checks').replaceChildren(...view.checks.map(checkRow))
 
-  // Кнопку «поднять сервер» показываем только когда вывод окончательный.
+  // Кнопку «поднять сервер» показываем только когда вывод окончательный. Но
+  // создание звонка не прячем никогда: проба видит лишь нашу сторону, и
+  // запрещать попытку — это обещать больше измеренного, только наоборот.
   show('action-goto-server', view.suggestServer)
-  show('action-create-code', !view.suggestServer)
 
   renderIcons()
 }

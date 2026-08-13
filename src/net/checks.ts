@@ -50,10 +50,15 @@ export function buildChecks(report: NetworkReport | null): ChecksView {
 
   const reflexive = firstReflexive(report.probe)
 
+  // Глобальный IPv6 — это прямой путь мимо NAT, и молчание STUN его не
+  // отменяет. Сеть без IPv4 наружу выглядит для проб ровно как заблокированный
+  // UDP: публичные STUN отвечают только по IPv4, спросить их не через что.
+  const savedByIpv6 = report.verdict === 'blocked' && report.ipv6
+
   // Красный вердикт и кнопка сервера — только когда вывод не зависит от второй
   // стороны и она уже ничего не спасёт: фактически при заблокированном UDP.
-  const hopeless = report.conclusive && !report.directLikely
-  const state: CheckState = hopeless ? 'fail' : verdictState(report)
+  const hopeless = report.conclusive && !report.directLikely && !savedByIpv6
+  const state: CheckState = hopeless ? 'fail' : savedByIpv6 ? 'warn' : verdictState(report)
 
   return {
     checks: [
@@ -67,7 +72,9 @@ export function buildChecks(report: NetworkReport | null): ChecksView {
       titleKey: `checks.verdict.${state}.title`,
       // Пояснение своё на каждый вывод: «cone» и «open» одинаково зелёные, но
       // обещать успех можно только там, где мы правда всё узнали.
-      noteKey: `checks.verdict.${report.verdict}.note`,
+      noteKey: savedByIpv6
+        ? 'checks.verdict.blockedIpv6.note'
+        : `checks.verdict.${report.verdict}.note`,
     },
     suggestServer: hopeless,
   }

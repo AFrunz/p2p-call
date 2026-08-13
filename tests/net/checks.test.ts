@@ -154,4 +154,30 @@ describe('buildChecks', () => {
       expect(view.verdict.noteKey.length).toBeGreaterThan(0)
     }
   })
+
+  it('глобальный IPv6 отменяет приговор молчащего STUN', () => {
+    // Сеть без IPv4 наружу выглядит для проб ровно как заблокированный UDP:
+    // публичные STUN отвечают только по IPv4, спросить их не через что. Но
+    // глобальный IPv6 ведёт напрямую мимо NAT, и запрещать попытку нельзя.
+    const view = buildChecks(report(silent(), true))
+
+    expect(view.suggestServer).toBe(false)
+    expect(view.verdict.state).toBe('warn')
+    expect(view.verdict.noteKey).toBe('checks.verdict.blockedIpv6.note')
+  })
+
+  it('без IPv6 молчащий STUN остаётся приговором', () => {
+    const view = buildChecks(report(silent(), false))
+
+    expect(view.suggestServer).toBe(true)
+    expect(view.verdict.state).toBe('fail')
+  })
+
+  it('не выдаёт спасение по IPv6 за исправную сеть: строки проб остаются красными', () => {
+    const view = buildChecks(report(silent(), true))
+    const states = new Map(view.checks.map((item) => [item.id, item.state]))
+
+    expect(states.get('reachability')).toBe('fail')
+    expect(states.get('ipv6')).toBe('ok')
+  })
 })
