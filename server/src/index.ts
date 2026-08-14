@@ -53,6 +53,9 @@ interface Session {
 const sessions = new WeakMap<WebSocket, Session>()
 
 wss.on('connection', (socket) => {
+  alive.add(socket)
+  socket.on('pong', () => alive.add(socket))
+
   const peer: Peer = {
     send: (raw) => {
       if (socket.readyState === socket.OPEN) socket.send(raw)
@@ -155,7 +158,35 @@ function fail(
 }
 
 const sweeper = setInterval(() => rooms.collect(), 60_000)
+
+/**
+ * Сердцебиение сигнального сокета.
+ *
+ * После знакомства сокет молчит весь разговор, а молчащее соединение
+ * промежуточные узлы — прокси, балансировщики, NAT операторов связи — рвут по
+ * своему таймауту. Для участников это выглядит как внезапно оборвавшийся
+ * звонок спустя несколько минут.
+ *
+ * Пинг шлёт сервер: из браузера управлять кадрами протокола нельзя, а ответный
+ * pong браузер отправляет сам. Трафик идёт в обе стороны, и таймеры на пути не
+ * успевают сработать. Заодно это единственный способ заметить сокет, который
+ * умер молча: без ответа на два пинга подряд соединение считается мёртвым.
+ */
+const HEARTBEAT_MS = 25_000
+const alive = new WeakSet<WebSocket>()
+
+const heartbeat = setInterval(() => {
+  for (const socket of wss.clients) {
+    if (!alive.has(socket)) {
+      socket.terminate()
+      continue
+    }
+    alive.delete(socket)
+    socket.ping()
+  }
+}, HEARTBEAT_MS)
 sweeper.unref()
+heartbeat.unref()
 
 http.listen(config.port, () => {
   const turn = config.turnHost === null ? 'без TURN' : `TURN на ${config.turnHost}:${config.turnPort}`

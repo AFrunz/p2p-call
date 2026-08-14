@@ -1,7 +1,7 @@
 import type { Bytes } from '../bytes.js'
 import { message } from '../i18n/message.js'
 import type { Message } from '../i18n/message.js'
-import { RATCHET_INTERVAL_MS, keyCheck } from '../crypto/kdf.js'
+import { keyCheck } from '../crypto/kdf.js'
 import {
   deriveMediaKeys,
   deriveSharedSecret,
@@ -251,6 +251,8 @@ export class CallSession {
   /** Список ICE от сервера: понадобится снова, если собеседник вернётся. */
   private lastIceServers: RTCIceServer[] = []
   private lowLatency = false
+  /** Сигналинг сообщил об уходе, пока медиа было живо: проверим, когда упадёт. */
+  private peerLeftPending = false
   /** Сколько наших кадров собеседник отбросил в прошлом отчёте. */
   private peerFailedFrames: number | null = null
   /** Потоки, по которым ещё не пришло подтверждение от воркера. */
@@ -274,7 +276,6 @@ export class CallSession {
   private readonly remoteStream = new MediaStream()
   private readonly stats = new StatsCollector()
   private statsTimer: ReturnType<typeof setInterval> | null = null
-  private ratchetTimer: ReturnType<typeof setInterval> | null = null
   private watchdog: ReturnType<typeof setTimeout> | null = null
   /** Кандидаты, собранные событиями: страховка на случай пустого SDP. */
   private gathered: string[] = []
@@ -533,6 +534,15 @@ export class CallSession {
         // Всё остальное — закрытая вкладка, перезагрузка, обрыв связи — повод
         // подождать его в комнате, а не заканчивать разговор за него.
         if (this.peerSaidBye) return this.endCall('peer')
+
+        // Сигналинг нужен был только для знакомства: разговор идёт мимо него.
+        // Оборвавшийся сокет — не повод рушить живое соединение, а сообщение
+        // об уходе через него приходит и когда собеседник никуда не уходил.
+        if (this.connection?.connectionState === 'connected') {
+          console.debug('[p2p] сигналинг сообщил об уходе, но медиа живо — продолжаем')
+          this.peerLeftPending = true
+          return
+        }
         this.awaitReturn()
       },
       onSignal: (payload) => {
@@ -746,6 +756,7 @@ export class CallSession {
     if (state === 'connected') {
       this.stopWatchdog()
       this.wasConnected = true
+      this.peerLeftPending = false
       // Соединение поднялось — значит собеседник на месте. В ручном режиме
       // сигналинга нет, и узнать об этом больше неоткуда.
       // Приёмники появляются вместе с соединением: режим задержки применяем к
@@ -754,6 +765,13 @@ export class CallSession {
       this.patch({ phase: 'connected', peerPresent: true, error: null, endReason: null })
       this.startTimers()
       return
+    }
+
+    // Собеседник ушёл ещё раньше, а медиа держалось на последних пакетах.
+    // Теперь оно упало — значит уход был настоящим, и надо ждать возвращения.
+    if ((state === 'failed' || state === 'disconnected') && this.peerLeftPending) {
+      this.peerLeftPending = false
+      return this.awaitReturn()
     }
 
     if (state === 'failed') {
@@ -1269,10 +1287,9 @@ export class CallSession {
       this.sendControl({ t: 'encrypted', ...this.encryptedFrames })
     }, 1000)
 
-    // Ротация ключей: воркер сам догоняет поколение по идентификатору в кадре.
-    this.ratchetTimer ??= setInterval(() => {
-      this.sendControl({ t: 'keyRotate', keyId: 0 })
-    }, RATCHET_INTERVAL_MS)
+    // Ротацию ключей отправитель не делает: счётчик кадров в nonce и так
+    // уникален под каждым ключом, а пересылка номера поколения без реального
+    // проворота храповика была бы обещанием, за которым ничего не стоит.
   }
 
   private bindChannel(channel: RTCDataChannel): void {
@@ -1583,10 +1600,8 @@ export class CallSession {
     if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
     this.releaseTimer = null
     if (this.statsTimer !== null) clearInterval(this.statsTimer)
-    if (this.ratchetTimer !== null) clearInterval(this.ratchetTimer)
     if (this.confirmTimer !== null) clearTimeout(this.confirmTimer)
     this.statsTimer = null
-    this.ratchetTimer = null
     this.confirmTimer = null
 
     this.signaling?.close()

@@ -7,9 +7,6 @@ export type Direction = 'send' | 'recv'
 /** Число итераций PBKDF2 для парольной фразы. */
 export const PBKDF2_ITERATIONS = 250_000
 
-/** Как часто крутим ratchet во время звонка. */
-export const RATCHET_INTERVAL_MS = 30_000
-
 const CURVE = { name: 'ECDH', namedCurve: 'P-256' } as const
 const EMPTY_SALT = new Uint8Array(0)
 const encoder = new TextEncoder()

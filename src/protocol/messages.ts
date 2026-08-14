@@ -15,7 +15,6 @@ export type ControlMessage =
   // Разрешение и частота едут вместе: собеседник просит картинку целиком, а не
   // по половинке, и применять их надо одним движением.
   | { t: 'quality'; preset: QualityPreset; frameRate: FrameRate }
-  | { t: 'keyRotate'; keyId: number }
   | { t: 'ping'; ts: number }
   | { t: 'pong'; ts: number }
   | { t: 'frames'; ok: number; failed: number }
@@ -55,11 +54,6 @@ export function decodeMessage(raw: string): ControlMessage | null {
       const frameRate = source['frameRate']
       if (!isQualityPreset(preset) || !isFrameRate(frameRate)) return null
       return { t: 'quality', preset, frameRate }
-    }
-    case 'keyRotate': {
-      const keyId = source['keyId']
-      if (!isByte(keyId)) return null
-      return { t: 'keyRotate', keyId }
     }
     case 'ping': {
       const ts = source['ts']
@@ -108,10 +102,6 @@ function isCheck(value: unknown): value is string {
 
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
-}
-
-function isByte(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 255
 }
 
 function isTimestamp(value: unknown): value is number {
