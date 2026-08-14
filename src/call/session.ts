@@ -550,9 +550,10 @@ export class CallSession {
       },
       onError: (reason) => this.patch({ error: reason }),
       onClosed: () => {
-        if (this.view.phase !== 'connected') {
-          this.patch({ error: message('session.signalingClosed') })
-        }
+        // Клиент сдаётся только исчерпав попытки вернуться. Если разговор при
+        // этом идёт, терять его незачем: сигналинг нужен был для знакомства.
+        if (this.connection?.connectionState === 'connected') return
+        this.patch({ error: message('session.signalingClosed') })
       },
     })
 

@@ -20,6 +20,9 @@ export interface SignalingEvents {
   onClosed(): void
 }
 
+/** Задержки перед попытками переподключения, мс. */
+const RETRY_DELAYS = [1_000, 2_000, 5_000, 10_000, 20_000]
+
 /**
  * Клиент сигнального сервера. Всё, что уходит в сеть, запечатано ключом из
  * секрета комнаты: сервер видит только идентификатор комнаты и блоб.
@@ -28,6 +31,8 @@ export class SignalingClient {
   private socket: WebSocket | null = null
   private key: CryptoKey | null = null
   private closedByUs = false
+  private attempt = 0
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private readonly invite: Invite,
@@ -41,6 +46,7 @@ export class SignalingClient {
     this.socket = socket
 
     socket.addEventListener('open', () => {
+      this.attempt = 0
       socket.send(encodeClientMessage({ t: 'join', room: this.invite.roomId }))
     })
 
@@ -48,12 +54,24 @@ export class SignalingClient {
       void this.handle(String(event.data))
     })
 
-    socket.addEventListener('error', () => {
-      this.events.onError(message('signaling.unreachable'))
-    })
+    // Ошибку сокета не показываем сразу: за ней всегда идёт close, и решение
+    // принимается там — после того, как исчерпаны попытки вернуться.
+    socket.addEventListener('error', () => undefined)
 
     socket.addEventListener('close', () => {
-      if (!this.closedByUs) this.events.onClosed()
+      if (this.closedByUs) return
+      if (socket !== this.socket) return
+
+      // Сокет мог умереть от бездействия, от смены сети, от сна устройства.
+      // Всё это лечится повторным подключением: комната та же, роль за нами
+      // закреплена, а медиа при живом соединении даже не заметит перерыва.
+      if (this.attempt < RETRY_DELAYS.length) {
+        const delay = RETRY_DELAYS[this.attempt] ?? 20_000
+        this.attempt++
+        this.retryTimer = setTimeout(() => void this.connect(), delay)
+        return
+      }
+      this.events.onClosed()
     })
   }
 
@@ -65,6 +83,8 @@ export class SignalingClient {
 
   close(): void {
     this.closedByUs = true
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer)
+    this.retryTimer = null
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(encodeClientMessage({ t: 'leave' }))
     }
