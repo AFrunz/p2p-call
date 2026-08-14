@@ -32,6 +32,7 @@ import {
   setText,
   show,
   showOnly,
+  resumePlayback,
   silenceBriefly,
 } from './ui/dom.js'
 import {
@@ -234,7 +235,9 @@ function releaseMedia(): void {
   // закрытия вкладки. Останавливаем всё, до чего дотягиваемся.
   stopStream(session?.media.local ?? null)
 
-  for (const id of ['remote-video', 'local-video', 'waiting-video']) attachStream(id, null)
+  for (const id of ['remote-video', 'remote-audio', 'local-video', 'waiting-video']) {
+    attachStream(id, null)
+  }
 
   renderToggleIcons(false, false)
   setPressed('call-mic', false)
@@ -898,6 +901,7 @@ function onPhase(view: SessionView): void {
       )
 
       attachStream('remote-video', remote)
+      attachStream('remote-audio', remote)
       startTimer()
       // В режиме с кодами это первый экран звонка: захват дорожек происходит
       // здесь, а не в комнате ожидания, которой в этом сценарии нет.
@@ -997,7 +1001,7 @@ function renderCall(view: SessionView): void {
   // Смена слоя шифрования — момент, когда декодер получает кадры по старым
   // правилам и выдаёт их резким щелчком прямо в наушники.
   if (lastFrameEncryption !== null && lastFrameEncryption !== view.frameEncryption) {
-    silenceBriefly('remote-video', ENCRYPTION_SWITCH_MUTE_MS)
+    silenceBriefly('remote-audio', ENCRYPTION_SWITCH_MUTE_MS)
   }
   lastFrameEncryption = view.frameEncryption
 
@@ -1484,6 +1488,13 @@ function wire(): void {
   // Только beforeunload, без pagehide: на телефоне свёрнутая вкладка тоже
   // считается скрытой, и разговор обрывался бы на каждом переключении в
   // мессенджер — ровно тогда, когда человек идёт отправлять код или ссылку.
+  // Вернувшись на вкладку, элементы остаются на паузе: браузер приостановил их
+  // вместе со скрытой страницей и сам не возобновляет.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return
+    resumePlayback(['remote-audio', 'remote-video', 'local-video', 'waiting-video'])
+  })
+
   window.addEventListener('beforeunload', () => session?.leaveQuietly())
 }
 

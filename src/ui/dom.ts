@@ -72,8 +72,11 @@ export function fillSelect(target: HTMLSelectElement | string, options: Option[]
  * тогда элемент молча остаётся на паузе. Об отказе надо знать — иначе он
  * выглядит как «звук не передаётся».
  */
-export function attachStream(target: HTMLVideoElement | string, stream: MediaStream | null): void {
-  const node = typeof target === 'string' ? el<HTMLVideoElement>(target) : target
+export function attachStream(
+  target: HTMLMediaElement | string,
+  stream: MediaStream | null,
+): void {
+  const node = typeof target === 'string' ? el<HTMLMediaElement>(target) : target
   if (node.srcObject === stream) return
 
   node.srcObject = stream
@@ -85,6 +88,23 @@ export function attachStream(target: HTMLVideoElement | string, stream: MediaStr
       error instanceof Error ? error.name : error,
     )
   })
+}
+
+/**
+ * Возвращает воспроизведение после того, как вкладку снова открыли.
+ *
+ * Скрытую вкладку браузер вправе приостановить целиком, и после возврата
+ * элементы остаются на паузе: картинка замирает, звука нет. Само по себе это
+ * не чинится — нужно попросить заново.
+ */
+export function resumePlayback(ids: string[]): void {
+  for (const id of ids) {
+    const node = document.getElementById(id)
+    if (!(node instanceof HTMLMediaElement) || node.srcObject === null) continue
+    if (!node.paused) continue
+
+    void node.play().catch(() => undefined)
+  }
 }
 
 /**

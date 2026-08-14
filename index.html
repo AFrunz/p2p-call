@@ -399,7 +399,12 @@
 
     <!-- ================= Звонок ================= -->
     <main class="call" id="screen-call" hidden>
-      <video id="remote-video" class="call__video" autoplay playsinline></video>
+      <video id="remote-video" class="call__video" autoplay playsinline muted></video>
+      <!--
+        Звук собеседника идёт отдельным элементом: видео в скрытой вкладке
+        браузер вправе приостановить, и вместе с ним замолкал бы разговор.
+      -->
+      <audio id="remote-audio" autoplay></audio>
 
       <div class="call__off" id="call-off">
         <i data-lucide="video-off" id="call-off-icon"></i>
