@@ -1628,6 +1628,8 @@ svg {
   color: #fff;
   font-size: 14px;
   font-weight: 500;
+  /* Подпись обязана остаться в строку: перенос ломает высоту всей панели. */
+  white-space: nowrap;
 }
 
 .control--danger:hover {
