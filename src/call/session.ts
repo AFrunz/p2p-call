@@ -41,7 +41,13 @@ import type { Role } from '../signaling/types.js'
 import { BASE_FRAME_RATE } from '../media/quality.js'
 import type { FrameRate, QualityPreset } from '../media/quality.js'
 import { applyQuality, describeMissing, requestMedia, stopStream } from './media.js'
-import { StatsCollector, createConnection, preferFrameSafeVideo, waitForGathering } from './peer.js'
+import {
+  StatsCollector,
+  applyPlayoutDelay,
+  createConnection,
+  preferFrameSafeVideo,
+  waitForGathering,
+} from './peer.js'
 import type { CallStats } from './peer.js'
 import {
   attachAll,
@@ -170,6 +176,8 @@ export interface SessionOptions {
   signalingServer?: string | null
   /** Базовый адрес страницы для сборки ссылки. */
   pageUrl: string
+  /** Минимальная задержка вместо плавности: приёмник не копит кадры. */
+  lowLatency?: boolean
   /**
    * Сколько секунд даётся на перенос кода.
    *
@@ -242,6 +250,7 @@ export class CallSession {
   private peerSaidBye = false
   /** Список ICE от сервера: понадобится снова, если собеседник вернётся. */
   private lastIceServers: RTCIceServer[] = []
+  private lowLatency = false
   /** Сколько наших кадров собеседник отбросил в прошлом отчёте. */
   private peerFailedFrames: number | null = null
   /** Потоки, по которым ещё не пришло подтверждение от воркера. */
@@ -285,6 +294,7 @@ export class CallSession {
     // Своё окно нужно только создателю сессии; отвечающий перезапишет его
     // числом из кода, как только код разберётся.
     this.holdSeconds = options.connectDelay ?? DEFAULT_HOLD_SECONDS
+    this.lowLatency = options.lowLatency === true
   }
 
   /**
@@ -738,6 +748,9 @@ export class CallSession {
       this.wasConnected = true
       // Соединение поднялось — значит собеседник на месте. В ручном режиме
       // сигналинга нет, и узнать об этом больше неоткуда.
+      // Приёмники появляются вместе с соединением: режим задержки применяем к
+      // ним здесь, иначе выбранная настройка не доедет до первого звонка.
+      applyPlayoutDelay(connection, this.lowLatency)
       this.patch({ phase: 'connected', peerPresent: true, error: null, endReason: null })
       this.startTimers()
       return
@@ -1503,6 +1516,16 @@ export class CallSession {
       canSend: { ...this.view.canSend, [kind]: true },
       muted: { ...this.view.muted, [kind]: !track.enabled },
     })
+  }
+
+  /**
+   * Переключает режим задержки на лету.
+   *
+   * Пересогласование не требуется: это настройка приёмника, а не потока.
+   */
+  setLowLatency(lowLatency: boolean): void {
+    this.lowLatency = lowLatency
+    if (this.connection !== null) applyPlayoutDelay(this.connection, lowLatency)
   }
 
   /** Текущее состояние своих дорожек — нужно интерфейсу для кнопок. */

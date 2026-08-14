@@ -362,4 +362,9 @@ export const ru: Record<string, string> = {
   'session.peerLeftTemporarily': 'Собеседник вышел — ждём, когда он вернётся по той же ссылке.',
   'call.waitingBack': 'Собеседник вышел',
   'call.waitingBackNote': 'Связь оборвалась или он закрыл вкладку. Звонок продолжится сам, как только он снова откроет ссылку.',
+  'quality.latency': 'ЗАДЕРЖКА',
+  'quality.latencyNormal': 'Обычная — плавно',
+  'quality.latencyLow': 'Низкая — живее',
+  'quality.latencyHint': 'Плавность держится за счёт буфера, и он же — основная задержка. Без него разговор живее, но неровности сети сразу видны рывками.',
+  'quality.latencyUnsupported': 'Этот браузер режимом задержки не управляет.',
 }

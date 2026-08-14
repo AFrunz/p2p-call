@@ -82,6 +82,7 @@ describe('loadSettings', () => {
       frameRate: 60 as const,
       cameraId: 'cam-1',
       microphoneId: 'mic-1',
+      lowLatency: true,
       connectDelay: 120,
     }
     saveSettings(store, settings)
@@ -216,6 +217,17 @@ describe('задержка старта', () => {
     for (const raw of [0, -5, 7, 'минута', null]) {
       const store = storage({ 'p2p-call/settings/v1': JSON.stringify({ connectDelay: raw }) })
       expect(loadSettings(store).connectDelay, String(raw)).toBe(60)
+    }
+  })
+
+  it('низкая задержка выключена по умолчанию и включается только явным true', () => {
+    // Режим жёстче к сети: включать его из-за случайного значения в хранилище
+    // нельзя, иначе человек получит рывки, ничего не выбирая.
+    expect(DEFAULT_SETTINGS.lowLatency).toBe(false)
+
+    for (const value of ['true', 1, {}, null, undefined]) {
+      const store = storage({ 'p2p-call/settings/v1': JSON.stringify({ lowLatency: value }) })
+      expect(loadSettings(store).lowLatency, String(value)).toBe(false)
     }
   })
 })

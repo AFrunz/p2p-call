@@ -373,6 +373,26 @@ function renderQualityPanel(): void {
       }),
     ),
   )
+
+  // Свойство нестандартное: там, где его нет, честнее сказать об этом, чем
+  // оставить переключатель, который ничего не делает.
+  const latencySupported = 'playoutDelayHint' in RTCRtpReceiver.prototype
+  setText('latency-hint', t(latencySupported ? 'quality.latencyHint' : 'quality.latencyUnsupported'))
+
+  el('latency-options').replaceChildren(
+    ...([
+      ['quality.latencyNormal', false],
+      ['quality.latencyLow', true],
+    ] as const).map(([key, low]) =>
+      optionRow(t(key), low === settings.lowLatency, () => {
+        if (!latencySupported) return
+        settings = { ...settings, lowLatency: low }
+        saveSettings(localStorage, settings)
+        renderQualityPanel()
+        session?.setLowLatency(low)
+      }),
+    ),
+  )
   renderIcons()
 }
 
@@ -736,6 +756,7 @@ function newSession(): CallSession {
   const created = new CallSession({
     quality: settings.quality,
     frameRate: settings.frameRate,
+    lowLatency: settings.lowLatency,
     passphrase: null,
     cameraId: settings.cameraId,
     microphoneId: settings.microphoneId,

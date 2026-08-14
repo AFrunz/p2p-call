@@ -352,4 +352,9 @@ export const en: Record<string, string> = {
   'session.peerLeftTemporarily': 'Your peer has left — waiting for them to come back through the same link.',
   'call.waitingBack': 'Your peer has left',
   'call.waitingBackNote': 'The connection dropped or they closed the tab. The call resumes by itself as soon as they open the link again.',
+  'quality.latency': 'LATENCY',
+  'quality.latencyNormal': 'Normal — smooth',
+  'quality.latencyLow': 'Low — livelier',
+  'quality.latencyHint': 'Smoothness comes from a buffer, and that buffer is the latency. Without it the conversation feels live, but every network hiccup shows up as a stutter.',
+  'quality.latencyUnsupported': 'This browser does not expose the latency control.',
 }

@@ -18,6 +18,13 @@ export interface Settings {
   frameRate: FrameRate
   cameraId: string | null
   microphoneId: string | null
+  /**
+   * Минимальная задержка вместо плавности.
+   *
+   * Приёмник перестаёт копить кадры: разговор становится живым, но неровности
+   * сети сразу видны рывками.
+   */
+  lowLatency: boolean
   /** Через сколько секунд после готовности ответа обе стороны начнут проверку. */
   connectDelay: number
 }
@@ -31,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   frameRate: 30,
   cameraId: null,
   microphoneId: null,
+  lowLatency: false,
   connectDelay: 60,
 }
 
@@ -81,6 +89,7 @@ export function loadSettings(storage: Storage): Settings {
     frameRate: isFrameRate(source['frameRate']) ? source['frameRate'] : DEFAULT_SETTINGS.frameRate,
     cameraId: stringOrNull(source['cameraId']),
     microphoneId: stringOrNull(source['microphoneId']),
+    lowLatency: source['lowLatency'] === true,
     connectDelay: isConnectDelay(source['connectDelay'])
       ? source['connectDelay']
       : DEFAULT_SETTINGS.connectDelay,

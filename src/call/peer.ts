@@ -244,3 +244,28 @@ function numberOrNull(value: unknown): number | null {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
 }
+
+
+/**
+ * Просит приёмники держать буфер минимальным.
+ *
+ * Плавность видео достигается буферизацией: приёмник копит кадры, чтобы
+ * сгладить неравномерность сети. Этот буфер и есть основная задержка. Ноль
+ * сжимает его до предела — разговор становится живым, но любая неровность
+ * сети сразу видна рывком.
+ *
+ * Свойство нестандартное и есть не везде; там, где его нет, режим просто не
+ * даёт эффекта, и это честнее, чем притворяться, будто он применился.
+ */
+export function applyPlayoutDelay(connection: RTCPeerConnection, lowLatency: boolean): boolean {
+  let applied = false
+
+  for (const receiver of connection.getReceivers()) {
+    const holder = receiver as unknown as Record<string, unknown>
+    if (!('playoutDelayHint' in holder)) continue
+
+    holder['playoutDelayHint'] = lowLatency ? 0 : null
+    applied = true
+  }
+  return applied
+}
