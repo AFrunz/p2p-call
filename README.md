@@ -1,172 +1,171 @@
 # P2P VideoCall
 
-**Русский** · [English](README.en.md)
+[Русский](README.ru.md) · **English**
 
-Видеозвонок на двоих напрямую между браузерами, со сквозным шифрованием кадров.
-Страница — обычная статика на GitHub Pages, сервера по умолчанию нет вообще:
-ни аккаунтов, ни базы, ни истории звонков.
+A two-person video call that goes straight between browsers, with end-to-end
+encrypted media frames. The page is plain static hosting on GitHub Pages, and by
+default there is no server at all: no accounts, no database, no call history.
 
 <p align="center">
-  <img src="docs/screenshots/call.jpg" width="820" alt="Экран звонка: бейджи шифрования и маршрута, контрольная фраза, панель управления">
+  <img src="docs/screenshots/en/call.jpg" width="820" alt="Call screen: encryption and route badges, verification phrase, controls">
 </p>
 
-- **Демо** — https://afrunz.github.io/P2P-VideoCall/
-- **Свой сервер** (нужен не всем) — [DEPLOY.md](DEPLOY.md)
-- **Техническое задание** — [TZ.md](TZ.md)
+- **Demo** — https://afrunz.github.io/P2P-VideoCall/
+- **Your own server** (not everyone needs one) — [DEPLOY.md](DEPLOY.md) (Russian)
+- **Specification** — [TZ.md](TZ.md) (Russian)
 
-## Два режима
+## Two modes
 
 <table>
 <tr><td width="50%" valign="top">
 
-**Напрямую — без всякого сервера**
+**Direct — no server whatsoever**
 
-Участники обмениваются кодами подключения: один создаёт код и присылает его
-любым мессенджером, второй вставляет и отправляет ответный. Дальше соединение
-идёт напрямую. Никто, включая автора приложения, не знает даже о самом факте
-звонка.
+The two sides exchange connection codes: one creates a code and sends it over
+any messenger, the other pastes it and sends the answer back. From there the
+connection is direct. Nobody — including the author of this app — even knows the
+call happened.
 
 </td><td width="50%" valign="top">
 
-**Через свой сервер — по ссылке**
+**Via your own server — by link**
 
-Нужен, когда прямое соединение не проходит: symmetric NAT у мобильных
-операторов, корпоративные сети с зарезанным UDP. Подключение становится по
-ссылке, обмен кодами не нужен. Секрет комнаты лежит после `#` и на сервер не
-попадает — он видит только непрозрачные блобы.
+For when a direct connection does not go through: symmetric NAT on mobile
+carriers, corporate networks with UDP cut off. Joining becomes a single link, no
+code exchange. The room secret lives after the `#` and never reaches the server,
+so all it sees is opaque blobs.
 
 </td></tr>
 </table>
 
-Прежде чем предлагать сервер, приложение честно пытается обойтись без него:
-IPv6, локальная сеть, hole punching через несколько STUN, автоматический ICE
-restart. Тип NAT определяется заранее — предупреждение приходит до того, как вы
-впустую перешлёте код.
+Before suggesting a server, the app honestly tries to do without one: IPv6, the
+local network, hole punching through several STUN servers, automatic ICE
+restart. NAT type is probed up front, so the warning arrives before you send a
+code for nothing.
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="420" alt="Главный экран: проверка сети и шаги">
-  <img src="docs/screenshots/exchange.png" width="420" alt="Мастер обмена кодами, шаг 1">
+  <img src="docs/screenshots/en/home.png" width="420" alt="Home screen: network check and steps">
+  <img src="docs/screenshots/en/exchange.png" width="420" alt="Code exchange wizard, step 1">
 </p>
 
-## Шифрование
+## Encryption
 
-Два слоя, оба всегда включены — переключателя намеренно нет.
+Two layers, both always on — there is deliberately no switch.
 
-1. **DTLS-SRTP** — встроен в WebRTC, отключить нельзя. Ключи через ECDHE P-256.
-   В режиме без сервера отпечаток сертификата едет из рук в руки, а не через
-   посредника, поэтому уже этот слой даёт настоящий E2EE.
-2. **Шифрование кадров** — AES-256-GCM в отдельном воркере, поверх
-   транспортного. Ключи выводятся через ECDH P-256 + HKDF и не покидают
-   браузеры. Именно этот слой закрывает ретранслятор: даже если медиа пойдёт
-   через TURN, сервер увидит шифротекст.
+1. **DTLS-SRTP** — built into WebRTC, cannot be turned off. Keys via ECDHE
+   P-256. In the serverless mode the certificate fingerprint travels hand to
+   hand rather than through a middleman, so this layer alone is genuine E2EE.
+2. **Frame encryption** — AES-256-GCM in a dedicated worker, on top of the
+   transport layer. Keys are derived with ECDH P-256 + HKDF and never leave the
+   browsers. This is the layer that shuts out the relay: even if media goes over
+   TURN, the server only ever sees ciphertext.
 
-Сверх этого — **контрольная фраза** из пяти слов, выведенная из общего секрета
-и обоих DTLS-отпечатков. Одинаковая фраза у обоих означает, что посередине
-никого нет; сверяется голосом, за десять секунд.
+On top of that there is a **verification phrase** of five words, derived from the
+shared secret and both DTLS fingerprints. Matching phrases mean nobody sits in
+the middle; reading them out loud takes ten seconds.
 
-Бейдж в звонке показывает, что именно работает прямо сейчас, и разворачивается
-в пояснение: «сеть не слышит» и «сервер не слышит» — отдельными пунктами. Если
-браузер не умеет Encoded Transform, приложение не притворяется: бейдж честно
-опускается до транспортного шифрования.
+The badge during a call shows what is actually in effect and expands into an
+explanation — "the network can't hear you" and "the server can't hear you" as
+separate points. If the browser lacks Encoded Transform, the app does not
+pretend: the badge honestly drops to transport-only encryption.
 
-## Что ещё есть
+## What else is in there
 
-- **Возврат в разговор.** Закрытая или перезагруженная вкладка не рвёт звонок
-  собеседнику: он ждёт в комнате и продолжает с того же места. Разговор
-  заканчивается только явным «Завершить».
-- **Комната ожидания** в режиме ссылки: пришли первым — проверьте камеру и звук,
-  собеседник подключится сам.
-- **Настройки прямо в звонке** — камера, микрофон, разрешение (360p/720p/1080p),
-  частота кадров (30/60) и режим минимальной задержки. Смена камеры видна сразу,
-  переподключаться не нужно.
-- **Маршрут соединения** видно в бейдже: локальная сеть, напрямую по IPv6, через
-  NAT или через ретранслятор.
-- **Статистика** (битрейт, потери, RTT, разрешение) — под кнопкой, чтобы не
-  мозолила глаза.
-- **Звонок без камеры и микрофона.** Можно войти только смотреть и слушать; если
-  доступна половина устройств — работает половина.
-- **Русский и английский**, определяется по браузеру и переключается в настройках.
-- **Устанавливается как приложение** (PWA) — на телефоне звонок продолжается,
-  когда вкладка свёрнута.
+- **Rejoining.** Closing or reloading a tab does not end the call for the other
+  side: they wait in the room and carry on from where they were. Only an
+  explicit "Hang up" ends the conversation.
+- **A waiting room** in link mode: arrive first, check your camera and sound,
+  the other side joins on their own.
+- **Settings inside the call** — camera, microphone, resolution
+  (360p/720p/1080p), frame rate (30/60) and a low-latency mode. Switching
+  cameras shows up immediately, with no reconnect.
+- **The connection route** is visible in a badge: local network, direct over
+  IPv6, through NAT, or through a relay.
+- **Statistics** (bitrate, loss, RTT, resolution) — behind a button, so they
+  stay out of the way.
+- **Calls without a camera or microphone.** You can join just to watch and
+  listen; if only half the devices are available, that half works.
+- **Russian and English**, detected from the browser and switchable in settings.
+- **Installable as an app** (PWA) — on a phone the call keeps running while the
+  tab is in the background.
 
 <p align="center">
-  <img src="docs/screenshots/home-mobile.png" width="250" alt="Главный экран на телефоне">
-  <img src="docs/screenshots/call-mobile.jpg" width="250" alt="Звонок на телефоне">
-  <img src="docs/screenshots/settings.png" width="250" alt="Настройки">
+  <img src="docs/screenshots/en/home-mobile.png" width="250" alt="Home screen on a phone">
+  <img src="docs/screenshots/en/call-mobile.jpg" width="250" alt="Call on a phone">
+  <img src="docs/screenshots/en/settings.png" width="250" alt="Settings">
 </p>
 
-## Разработка
+## Development
 
 ```bash
 npm install
-npm run dev        # локальный сервер разработки
-npm test           # 464 теста
+npm run dev        # dev server
+npm test           # 464 tests
 npm run typecheck
-npm run build      # тайпчек и сборка в dist/
+npm run build      # typecheck and build into dist/
 ```
 
-Логика вынесена в чистые модули без обращений к DOM — именно они покрыты
-тестами. Браузерная часть (`RTCPeerConnection`, воркер, `getUserMedia`)
-намеренно тонкая.
+The logic lives in pure modules that never touch the DOM — those are what the
+tests cover. The browser-facing part (`RTCPeerConnection`, the worker,
+`getUserMedia`) is deliberately thin.
 
 ```
 src/
-  signaling/   коды подключения, разбор SDP, ссылки-приглашения, клиент сигналинга
-  crypto/      ECDH и HKDF, раскладка кадров, поколения ключей, SAS, воркер шифрования
-  net/         диагностика NAT, проверки достижимости, конфигурация ICE
-  call/        оркестратор звонка, медиа, статистика, encoded transform
-  media/       пресеты качества и битрейтов
-  protocol/    контрольный канал и протокол сигналинга (общий с сервером)
-  i18n/        словари ru/en
-  ui/          иконки, форматирование, работа с DOM
-server/        сигнальный сервер, разворачивается через Docker
+  signaling/   connection codes, SDP parsing, invite links, signaling client
+  crypto/      ECDH and HKDF, frame layout, key generations, SAS, encryption worker
+  net/         NAT diagnostics, reachability checks, ICE configuration
+  call/        call orchestrator, media, statistics, encoded transform
+  media/       quality and bitrate presets
+  protocol/    control channel and signaling protocol (shared with the server)
+  i18n/        ru/en dictionaries
+  ui/          icons, formatting, DOM helpers
+server/        signaling server, deployed with Docker
 ```
 
-Зависимостей в рантайме ровно одна — набор иконок. Ни фреймворка, ни сборочной
-магии: TypeScript, Vite, Vitest.
+There is exactly one runtime dependency — an icon set. No framework, no build
+magic: TypeScript, Vite, Vitest.
 
-## Публикация на GitHub Pages
+## Publishing on GitHub Pages
 
-Приложение — статика, поэтому Pages ему достаточно. Ассеты собираются с
-относительными путями, так что имя репозитория может быть любым и ничего
-править не нужно.
+The app is static, so Pages is enough. Assets are built with relative paths, so
+the repository can be named anything and nothing needs editing.
 
 ```bash
-git remote add origin git@github.com:<логин>/<репозиторий>.git
+git remote add origin git@github.com:<user>/<repo>.git
 git push -u origin main
 ```
 
-Дальше один раз в настройках репозитория: **Settings → Pages → Build and
-deployment → Source: GitHub Actions**. Именно `GitHub Actions`, а не
-`Deploy from a branch` — иначе воркфлоу отработает, но результат никуда не
-попадёт.
+Then, once, in the repository settings: **Settings → Pages → Build and
+deployment → Source: GitHub Actions**. Specifically `GitHub Actions`, not
+`Deploy from a branch` — otherwise the workflow runs but the result goes
+nowhere.
 
-После этого каждый push в `main` запускает `.github/workflows/deploy.yml`:
-сначала тайпчек, тесты и сборка сервера, и только если всё зелёное —
-публикация. Сайт появится по адресу `https://<логин>.github.io/<репозиторий>/`.
+After that every push to `main` runs `.github/workflows/deploy.yml`: typecheck,
+tests and a server build first, and only if everything is green — publish. The
+site appears at `https://<user>.github.io/<repo>/`.
 
-Что важно знать про Pages:
+Things worth knowing about Pages:
 
-- **HTTPS обязателен** — без него браузер не отдаст камеру. Pages даёт его сам.
-- **Ссылка-приглашение** содержит секрет комнаты после `#`, а фрагмент URL не
-  отправляется на сервер. Pages раздаёт статику и о содержимом ссылок ничего не
-  узнаёт.
-- **Сигнальный сервер на Pages не поднять** — это статический хостинг. Если он
-  понадобится, разворачивайте отдельно ([DEPLOY.md](DEPLOY.md)); адрес
-  указывается в настройках приложения и хранится только в браузере.
+- **HTTPS is mandatory** — without it the browser will not hand over the camera.
+  Pages provides it.
+- **The invite link** carries the room secret after `#`, and a URL fragment is
+  never sent to the server. Pages serves static files and learns nothing about
+  what is in the links.
+- **A signaling server cannot run on Pages** — it is static hosting. If you need
+  one, deploy it separately ([DEPLOY.md](DEPLOY.md), in Russian); its address is
+  entered in the app settings and stored only in the browser.
 
-## Ограничения
+## Limitations
 
-- Ровно два участника: ручной сигналинг большего не позволяет.
-- Без своего сервера примерно 10–20% соединений не установятся — это свойство
-  NAT, а не приложения.
-- Сквозное шифрование кадров требует поддержки Encoded Transform
-  (`RTCRtpScriptTransform` или устаревший `createEncodedStreams`). Без неё
-  звонок работает на транспортном шифровании, о чём в интерфейсе висит
-  предупреждение.
-- В режиме без сервера код подключения приходится переносить руками, и делать
-  это надо в отведённое время — по умолчанию минута, меняется в настройках.
+- Exactly two participants: manual signaling does not allow for more.
+- Without your own server roughly 10–20% of connections will not establish —
+  that is a property of NAT, not of the app.
+- End-to-end frame encryption requires Encoded Transform support
+  (`RTCRtpScriptTransform`, or the legacy `createEncodedStreams`). Without it
+  the call falls back to transport encryption, and the interface says so.
+- In the serverless mode the connection code has to be carried by hand, within a
+  time limit — one minute by default, adjustable in settings.
 
-## Лицензия
+## License
 
 [MIT](LICENSE).
