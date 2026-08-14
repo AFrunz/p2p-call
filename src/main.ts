@@ -336,7 +336,7 @@ async function fillDevices(): Promise<void> {
       settings = { ...settings, [key]: value }
       saveSettings(localStorage, settings)
       void fillDevices()
-      void restartCapture()
+      void replaceDevice(key === 'cameraId' ? 'video' : 'audio')
     }
     el(containerId).replaceChildren(
       optionRow(auto, current === null, () => pick(null)),
@@ -377,15 +377,34 @@ function renderQualityPanel(): void {
 }
 
 /** Заново берёт устройства после смены камеры или микрофона в звонке. */
-async function restartCapture(): Promise<void> {
+/**
+ * Меняет одно устройство, не трогая второе.
+ *
+ * Раньше пересобирался весь захват: заодно отваливался микрофон, а новая
+ * дорожка приходила выключенной — со стороны это выглядело как «камера
+ * пропала». Состояние переносим со старой дорожки: человек менял устройство,
+ * а не выключал его.
+ */
+async function replaceDevice(kind: 'audio' | 'video'): Promise<void> {
   const stream = session?.media.local
   if (stream === null || stream === undefined) return
 
-  for (const track of stream.getTracks()) {
+  const previous = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
+  const wasEnabled = previous[0]?.enabled ?? false
+
+  for (const track of previous) {
     track.stop()
     stream.removeTrack(track)
   }
-  for (const kind of ['audio', 'video'] as const) await acquireTrack(kind, stream)
+  if (!(await acquireTrack(kind, stream))) return
+
+  const fresh = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
+  for (const track of fresh) track.enabled = wasEnabled
+
+  // Элементы держат прежний поток по ссылке, но браузеру нужен повторный
+  // вызов play после подмены дорожки — иначе картинка застывает чёрной.
+  for (const id of ['local-video', 'waiting-video']) attachStream(id, stream)
+  session?.setMuted(kind, !wasEnabled)
 }
 
 function togglePanel(which: 'devices' | 'quality'): void {

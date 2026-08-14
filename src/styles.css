@@ -1768,6 +1768,7 @@ svg {
   width: 100%;
   max-width: 560px;
   aspect-ratio: 16 / 9;
+  margin: 0 auto;
   border: 1px solid #ffffff1f;
   border-radius: 12px;
   background: #12151c;
@@ -2205,9 +2206,11 @@ svg {
     white-space: nowrap;
   }
 
+  /* Телефон снимает вертикально: горизонтальное окно обрезало бы лицо по
+     бокам и оставляло пустые поля сверху и снизу. */
   .pip {
-    width: 104px;
-    height: 59px;
+    width: 90px;
+    height: 120px;
   }
 
   .pip__off {
@@ -2253,6 +2256,12 @@ svg {
     transform: none;
     border-radius: 6px 6px 0 0;
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* В ожидании человек смотрит на себя — кадр вертикальный, как и камера. */
+  .waiting__self {
+    aspect-ratio: 3 / 4;
+    max-width: 320px;
   }
 
   .waiting {
