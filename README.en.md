@@ -10,7 +10,7 @@ default there is no server at all: no accounts, no database, no call history.
   <img src="docs/screenshots/en/call.jpg" width="820" alt="Call screen: encryption and route badges, verification phrase, controls">
 </p>
 
-- **Demo** — https://afrunz.github.io/p2p-call/
+- **Demo** — https://afrunz.github.io/P2P-VideoCall/
 - **Your own server** (not everyone needs one) — [DEPLOY.md](DEPLOY.md)
 - **Specification** (Russian) — [TZ.md](TZ.md)
 

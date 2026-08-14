@@ -10,7 +10,7 @@
   <img src="docs/screenshots/call.jpg" width="820" alt="Экран звонка: бейджи шифрования и маршрута, контрольная фраза, панель управления">
 </p>
 
-- **Демо** — https://afrunz.github.io/p2p-call/
+- **Демо** — https://afrunz.github.io/P2P-VideoCall/
 - **Свой сервер** (нужен не всем) — [DEPLOY.md](DEPLOY.md)
 - **Техническое задание** — [TZ.md](TZ.md)
 
